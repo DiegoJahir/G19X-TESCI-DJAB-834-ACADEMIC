@@ -1,0 +1,17 @@
+# Archivos con datos sensibles o privados
+Estado De Cuenta.csv
+Instrucciones.txt
+*.csv
+.env
+
+# Entornos virtuales y dependencias
+venv/
+backend/venv/
+frontend/venv/
+node_modules/
+frontend/node_modules/
+__pycache__/
+*.pyc
+
+# Archivos de configuración local
+.vscode/

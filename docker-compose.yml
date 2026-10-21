@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  # Servicio de Base de Datos PostgreSQL
+  postgres_db:
+    image: postgres:15-alpine
+    container_name: plurione_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: admin_plurione
+      POSTGRES_PASSWORD: SecurePassword2026!
+      POSTGRES_DB: plurione_finance_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  # Interfaz gráfica para gestionar la BD desde el navegador
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: plurione_pgadmin
+    restart: always
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@plurione.com
+      PGADMIN_DEFAULT_PASSWORD: AdminPassword2026!
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres_db
+
+volumes:
+  postgres_data:

@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+pydantic
+pandas
+numpy
+langchain
+langgraph
+python-dotenv
+psycopg2-binary
+redis
+requests

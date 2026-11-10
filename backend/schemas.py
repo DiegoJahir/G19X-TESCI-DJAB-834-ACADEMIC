@@ -6,7 +6,7 @@ class UserCreate(BaseModel):
     full_name: str
     email: EmailStr
     password: str
-    role: Optional[str] = "analyst"
+    # Omitido intencionalmente el campo 'role' para que el cliente no pueda manipularlo
 
 class UserResponse(BaseModel):
     id: int

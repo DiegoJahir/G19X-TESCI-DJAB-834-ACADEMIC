@@ -6,10 +6,10 @@ Sistema agéntico empresarial desarrollado para **PluriOne S.A. de C.V.** enfoca
 
 ## 🛠️ Pila Tecnológica
 
-* **Backend & Orquestación:** Python, FastAPI, Uvicorn, LangChain, LangGraph.
-* **Base de Datos & Caché:** PostgreSQL, Redis, Docker, Docker Compose.
-* **Frontend:** React.js, Vite, TailwindCSS / Lucide Icons.
-* **DevOps & Cloud:** GitHub Actions (CI/CD), Azure OpenAI Service (`.env.example`), Azure AI Search.
+- **Backend & Orquestación:** Python, FastAPI, Uvicorn, LangChain, LangGraph.
+- **Base de Datos & Caché:** PostgreSQL, Redis, Docker, Docker Compose.
+- **Frontend:** React.js, Vite, Lucide Icons.
+- **DevOps & Cloud:** GitHub Actions (CI/CD), Azure OpenAI Service (`.env.example`), Azure AI Search.
 
 ---
 

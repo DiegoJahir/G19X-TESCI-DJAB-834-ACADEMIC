@@ -1,38 +1,46 @@
--- DDL para el Sistema de Arquitectura Agéntica de Finanzas Corporativas (PluriOne)
+-- Eliminar tablas si ya existen (orden correcto por dependencias de llaves foráneas)
+DROP TABLE IF EXISTS audit_logs;
+DROP TABLE IF EXISTS bank_statements;
+DROP TABLE IF EXISTS invoices;
+DROP TABLE IF EXISTS users;
 
-CREATE TABLE IF NOT EXISTS invoices (
+-- 1. Tabla de Usuarios (Alineada con backend/models.py)
+CREATE TABLE users (
     id SERIAL PRIMARY KEY,
-    invoice_number VARCHAR(50) UNIQUE NOT NULL,
-    client_name VARCHAR(150) NOT NULL,
-    total_amount NUMERIC(12, 2) NOT NULL,
-    paid_amount NUMERIC(12, 2) DEFAULT 0.00,
-    status VARCHAR(30) DEFAULT 'PENDIENTE', -- PENDIENTE, CONCILIADO, PARCIAL
-    created_TIMESTAMP TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    full_name VARCHAR(255) NOT NULL,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    hashed_password VARCHAR(255) NOT NULL,
+    role VARCHAR(50) DEFAULT 'analyst',
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS bank_statements (
+-- 2. Tabla de Facturas (Alineada con backend/models.py usando folio, client, amount, status)
+CREATE TABLE invoices (
     id SERIAL PRIMARY KEY,
-    transaction_date DATE NOT NULL,
-    reference VARCHAR(100),
-    concept TEXT,
-    charge_amount NUMERIC(12, 2) DEFAULT 0.00,
-    deposit_amount NUMERIC(12, 2) DEFAULT 0.00,
-    balance NUMERIC(12, 2) NOT NULL,
-    is_reconciled BOOLEAN DEFAULT FALSE
+    folio VARCHAR(100) UNIQUE NOT NULL,
+    client VARCHAR(255) NOT NULL,
+    amount DOUBLE PRECISION NOT NULL,
+    status VARCHAR(50) DEFAULT 'Pendiente',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS audit_logs (
+-- 3. Tabla opcional para registros de auditoría de los agentes
+CREATE TABLE audit_logs (
     id SERIAL PRIMARY KEY,
-    agent_name VARCHAR(100) NOT NULL,
-    action_performed TEXT NOT NULL,
-    risk_level VARCHAR(20) DEFAULT 'BAJO',
-    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    action_type VARCHAR(100) NOT NULL,
+    details TEXT,
+    timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- Datos de prueba iniciales (Facturas corporativas PluriOne)
-INSERT INTO invoices (invoice_number, client_name, total_amount, paid_amount, status) 
+-- Datos de prueba iniciales para validar la base de datos al levantar Docker
+INSERT INTO users (full_name, email, hashed_password, role, is_active) 
+VALUES ('Administrador PluriOne', 'admin@plurione.com', '$2b$12$E...hash_ejemplo...', 'admin', TRUE)
+ON CONFLICT (email) DO NOTHING;
+
+INSERT INTO invoices (folio, client, amount, status) 
 VALUES 
-('FAC-1021', 'Corporativo Alpha S.A.', 45000.00, 0.00, 'PENDIENTE'),
-('FAC-1022', 'Logística del Bajío', 98000.00, 0.00, 'PENDIENTE'),
-('FAC-1023', 'Servicios Industriales Zeta', 12500.00, 0.00, 'PENDIENTE')
-ON CONFLICT (invoice_number) DO NOTHING;
+    ('FAC-1021', 'Tech Solutions Ltd', 45000.0, 'Pendiente'),
+    ('FAC-1022', 'Innovación Digital SA', 12500.0, 'Pendiente'),
+    ('FAC-1023', 'Consultoría Global', 98000.0, 'Pendiente')
+ON CONFLICT (folio) DO NOTHING;

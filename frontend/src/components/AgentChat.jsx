@@ -3,9 +3,10 @@ import { Upload, Bot, Send } from 'lucide-react';
 
 export default function AgentChat({ onReconcileSuccess }) {
   const [messages, setMessages] = useState([
-    { sender: 'bot', text: 'Hola Diego, soy el Orquestador Financiero. Subes un estado de cuenta en PDF o Excel para comenzar la conciliación.' }
+    { sender: 'bot', text: 'Hola Diego, soy el Orquestador Financiero. Sube un estado de cuenta en PDF o Excel para comenzar la conciliación o escríbeme una instrucción.' }
   ]);
   const [input, setInput] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
   // Manejador de subida de archivos hacia FastAPI
   const handleFileUpload = async (e) => {
@@ -55,17 +56,52 @@ export default function AgentChat({ onReconcileSuccess }) {
     }
   };
 
-  const handleSend = () => {
-    if (!input.trim()) return;
-    setMessages([...messages, { sender: 'user', text: input }]);
+  // Manejador del chat conectado al endpoint real /api/chat (LangGraph + Azure OpenAI)
+  const handleSend = async () => {
+    if (!input.trim() || isLoading) return;
+
+    const userMessage = input;
     setInput('');
     
-    setTimeout(() => {
-      setMessages(prev => [
-        ...prev,
-        { sender: 'bot', text: 'Analizando tu petición con los agentes de conciliación y riesgo...' }
-      ]);
-    }, 1000);
+    // 1. Mostrar el mensaje del usuario y un indicador de carga del bot
+    setMessages(prev => [
+      ...prev,
+      { sender: 'user', text: userMessage },
+      { sender: 'bot', text: 'Analizando tu petición con los agentes de conciliación y riesgo...' }
+    ]);
+    setIsLoading(true);
+
+    try {
+      const response = await fetch("http://127.0.0.1:8000/api/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ message: userMessage }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Error en la respuesta del servidor");
+      }
+
+      const data = await response.json();
+
+      // 2. Reemplazar el mensaje temporal de carga por la respuesta real de la IA
+      setMessages(prev => {
+        const newMessages = [...prev];
+        newMessages.pop(); // Quitar el mensaje temporal de "Analizando..."
+        return [...newMessages, { sender: 'bot', text: data.response }];
+      });
+    } catch (error) {
+      console.error("Error conectando con el agente:", error);
+      setMessages(prev => {
+        const newMessages = [...prev];
+        newMessages.pop();
+        return [...newMessages, { sender: 'bot', text: 'Error: No se pudo conectar con el agente inteligente en el backend.' }];
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -121,13 +157,18 @@ export default function AgentChat({ onReconcileSuccess }) {
       <div style={{ display: 'flex', gap: '8px' }}>
         <input
           type="text"
-          placeholder="Escribe una instrucción..."
+          placeholder={isLoading ? "El agente está respondiendo..." : "Escribe una instrucción..."}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+          disabled={isLoading}
           style={{ flex: 1, padding: '10px', borderRadius: '6px', border: '1px solid #ccc' }}
         />
-        <button onClick={handleSend} style={{ backgroundColor: '#007bff', color: '#fff', border: 'none', padding: '10px 15px', borderRadius: '6px', cursor: 'pointer' }}>
+        <button 
+          onClick={handleSend} 
+          disabled={isLoading}
+          style={{ backgroundColor: '#007bff', color: '#fff', border: 'none', padding: '10px 15px', borderRadius: '6px', cursor: isLoading ? 'not-allowed' : 'pointer', opacity: isLoading ? 0.7 : 1 }}
+        >
           <Send size={18} />
         </button>
       </div>

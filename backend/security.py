@@ -1,8 +1,10 @@
+import os
 import jwt
 from datetime import datetime, timedelta
 from passlib.context import CryptContext
 
-SECRET_KEY = "PLURIONE_FINTECH_SECRET_KEY_2026"
+# Leer la clave secreta desde las variables de entorno de forma segura
+SECRET_KEY = os.getenv("SECRET_KEY", "super-secret-key-fallback-for-dev-only")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # Expira en 24 horas
 

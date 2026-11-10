@@ -1,9 +1,13 @@
+import os
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
-# Cadena de conexión con las credenciales configuradas en docker-compose.yml
-SQLALCHEMY_DATABASE_URL = "postgresql+psycopg2://admin_plurione:SecurePassword2026!@localhost:5432/plurione_finance_db"
+# Leer la URL de la base de datos desde las variables de entorno, usando bank_db por defecto
+SQLALCHEMY_DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "postgresql+psycopg://postgres:postgrespassword@localhost:5432/bank_db"
+)
 
 engine = create_engine(SQLALCHEMY_DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

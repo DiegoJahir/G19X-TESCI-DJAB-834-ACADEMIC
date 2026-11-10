@@ -7,13 +7,14 @@ services:
     container_name: plurione_postgres
     restart: always
     environment:
-      POSTGRES_USER: admin_plurione
-      POSTGRES_PASSWORD: SecurePassword2026!
-      POSTGRES_DB: plurione_finance_db
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgrespassword}
+      POSTGRES_DB: ${POSTGRES_DB:-bank_db}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./schema.sql:/docker-entrypoint-initdb.d/schema.sql
 
   # Interfaz gráfica para gestionar la BD desde el navegador
   pgadmin:
@@ -21,8 +22,8 @@ services:
     container_name: plurione_pgadmin
     restart: always
     environment:
-      PGADMIN_DEFAULT_EMAIL: admin@plurione.com
-      PGADMIN_DEFAULT_PASSWORD: AdminPassword2026!
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@plurione.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-AdminPassword2026!}
     ports:
       - "5050:80"
     depends_on:

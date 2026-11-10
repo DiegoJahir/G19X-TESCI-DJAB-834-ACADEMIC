@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File
+from fastapi.security import OAuth2PasswordBearer
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from typing import List
@@ -7,6 +8,11 @@ import io
 
 import models, schemas, security
 from database import engine, get_db
+
+from pydantic import BaseModel
+
+class ChatRequest(BaseModel):
+    message: str
 
 # Crear las tablas en PostgreSQL (users e invoices) si no existen
 models.Base.metadata.create_all(bind=engine)
@@ -22,6 +28,33 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/login")
+
+# --- DEPENDENCIAS DE AUTENTICACIÓN Y ROLES ---
+
+def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    """Decodifica el token JWT y obtiene el usuario autenticado actual."""
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="No se pudieron validar las credenciales",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    email = security.verify_access_token(token, credentials_exception)
+    user = db.query(models.User).filter(models.User.email == email).first()
+    if user is None or not user.is_active:
+        raise credentials_exception
+    return user
+
+def get_admin_user(current_user: models.User = Depends(get_current_user)):
+    """Valida que el usuario autenticado tenga rol de Administrador."""
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acceso denegado: Se requieren privilegios de Administrador"
+        )
+    return current_user
+
+
 @app.get("/")
 def root():
     return {"message": "API de PluriOne FinTech activa y conectada a PostgreSQL"}
@@ -35,11 +68,16 @@ def register_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="El correo electrónico ya está registrado")
     
     hashed_pwd = security.hash_password(user.password)
+    
+    # ASIGNACIÓN DE ROL SEGURA EN EL BACKEND:
+    # Se ignora cualquier intento del cliente; por defecto se asigna 'analyst' (o 'user')
+    assigned_role = "analyst" 
+    
     new_user = models.User(
         full_name=user.full_name,
         email=user.email,
         hashed_password=hashed_pwd,
-        role=user.role
+        role=assigned_role
     )
     db.add(new_user)
     db.commit()
@@ -60,11 +98,13 @@ def login(user_credentials: schemas.UserLogin, db: Session = Depends(get_db)):
     }
 
 @app.get("/api/users", response_model=List[schemas.UserResponse])
-def get_users(db: Session = Depends(get_db)):
+def get_users(db: Session = Depends(get_db), current_user: models.User = Depends(get_admin_user)):
+    """Obtiene la lista de usuarios. Protegido: Solo accesible por Administradores."""
     return db.query(models.User).all()
 
 @app.delete("/api/users/{user_id}", status_code=status.HTTP_200_OK)
-def delete_user(user_id: int, db: Session = Depends(get_db)):
+def delete_user(user_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_admin_user)):
+    """Elimina un usuario por ID. Protegido: Solo accesible por Administradores."""
     user_to_delete = db.query(models.User).filter(models.User.id == user_id).first()
     if not user_to_delete:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
@@ -77,10 +117,8 @@ def delete_user(user_id: int, db: Session = Depends(get_db)):
 
 @app.post("/api/reconcile")
 async def reconcile_statement(file: UploadFile = File(...), db: Session = Depends(get_db)):
-    # 1. Obtener las facturas registradas en la base de datos
     invoices = db.query(models.Invoice).all()
     
-    # Si la tabla está vacía, se inicializan las facturas base para la demostración
     if not invoices:
         default_invoices = [
             models.Invoice(folio="FAC-1021", client="Tech Solutions Ltd", amount=45000.0, status="Pendiente"),
@@ -91,7 +129,6 @@ async def reconcile_statement(file: UploadFile = File(...), db: Session = Depend
         db.commit()
         invoices = db.query(models.Invoice).all()
 
-    # 2. Leer y parsear el archivo del estado de cuenta subido (CSV o Excel)
     contents = await file.read()
     try:
         if file.filename.endswith('.csv'):
@@ -103,10 +140,8 @@ async def reconcile_statement(file: UploadFile = File(...), db: Session = Depend
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error al leer el archivo: {str(e)}")
 
-    # Normalizar encabezados de columna
     df.columns = [str(col).strip().lower() for col in df.columns]
 
-    # 3. Extraer los montos abonados
     abonos = []
     if 'abono' in df.columns:
         abonos = df['abono'].dropna().tolist()
@@ -117,7 +152,6 @@ async def reconcile_statement(file: UploadFile = File(...), db: Session = Depend
     pending_risk_total = 0.0
     results = []
 
-    # 4. Cruzar abonados contra facturas registradas
     for inv in invoices:
         match_found = any(abs(float(inv.amount) - float(abono)) < 1.0 for abono in abonos if pd.notnull(abono))
         
@@ -144,3 +178,22 @@ async def reconcile_statement(file: UploadFile = File(...), db: Session = Depend
         },
         "invoices": results
     }
+
+# --- ENDPOINT DEL AGENTE INTELIGENTE (LANGGRAPH) ---
+
+@app.post("/api/chat")
+async def chat_with_agent(request: ChatRequest):
+    try:
+        from backend.agents.workflow import app_agent
+        from langchain_core.messages import HumanMessage
+
+        initial_state = {"messages": [HumanMessage(content=request.message)]}
+        output = app_agent.invoke(initial_state)
+        final_message = output["messages"][-1]
+        
+        return {
+            "status": "success",
+            "response": final_message.content
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error en el agente de IA: {str(e)}")

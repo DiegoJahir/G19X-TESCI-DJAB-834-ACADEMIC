@@ -134,11 +134,19 @@ async def reconcile_statement(file: UploadFile = File(...), db: Session = Depend
         if file.filename.endswith('.csv'):
             df = pd.read_csv(io.BytesIO(contents))
         elif file.filename.endswith(('.xlsx', '.xls')):
-            df = pd.read_excel(io.BytesIO(contents))
+            try:
+                df = pd.read_excel(io.BytesIO(contents))
+            except Exception as excel_err:
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"Error al leer Excel. Asegúrate de tener instaladas las dependencias (ejecuta: pip install openpyxl xlrd). Detalle: {str(excel_err)}"
+                )
         else:
-            raise HTTPException(status_code=400, detail="Formato no soportado. Sube un archivo CSV o Excel.")
+            raise HTTPException(status_code=400, detail="Formato no soportado. Sube un archivo CSV o Excel (.xlsx, .xls).")
+    except HTTPException as he:
+        raise he
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Error al leer el archivo: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Error al procesar el archivo: {str(e)}")
 
     df.columns = [str(col).strip().lower() for col in df.columns]
 
@@ -184,7 +192,7 @@ async def reconcile_statement(file: UploadFile = File(...), db: Session = Depend
 @app.post("/api/chat")
 async def chat_with_agent(request: ChatRequest):
     try:
-        from backend.agents.workflow import app_agent
+        from agents.workflow import app_agent
         from langchain_core.messages import HumanMessage
 
         initial_state = {"messages": [HumanMessage(content=request.message)]}
@@ -196,4 +204,7 @@ async def chat_with_agent(request: ChatRequest):
             "response": final_message.content
         }
     except Exception as e:
+        # Esto imprimirá el error completo y detallado en la terminal en cuanto envíes un mensaje
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Error en el agente de IA: {str(e)}")

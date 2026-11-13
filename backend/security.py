@@ -1,8 +1,12 @@
 import os
+from dotenv import load_dotenv
 import jwt
 from datetime import datetime, timedelta, timezone
 from passlib.context import CryptContext
 from fastapi import HTTPException, status
+
+# Cargar las variables del archivo .env ubicado en la raíz del proyecto
+load_dotenv()
 
 # Leer la clave secreta desde las variables de entorno de forma segura
 SECRET_KEY = os.getenv("SECRET_KEY", "super-secret-key-fallback-for-dev-only")

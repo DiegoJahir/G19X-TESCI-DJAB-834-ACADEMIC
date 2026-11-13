@@ -4,6 +4,9 @@ Instrucciones.txt
 *.csv
 .env
 
+# Excepción para permitir que el CSV de ejemplo sí se guarde en Git
+!estado_cuenta_ejemplo.csv
+
 # Entornos virtuales y dependencias
 venv/
 backend/venv/

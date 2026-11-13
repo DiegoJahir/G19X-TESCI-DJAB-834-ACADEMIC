@@ -1,7 +1,11 @@
 import os
+from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
+
+# Cargar las variables del archivo .env ubicado en la raíz del proyecto
+load_dotenv()
 
 # Leer la URL de la base de datos desde las variables de entorno, usando bank_db por defecto
 SQLALCHEMY_DATABASE_URL = os.getenv(

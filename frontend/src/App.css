@@ -1,3 +1,28 @@
+:root {
+  --accent: #1E3A8A !important;
+  --accent-bg: #EFF6FF !important;
+  --accent-border: #93C5FD !important;
+  --border: #D1D5DB !important;
+  --text-h: #1E3A8A !important;
+  --social-bg: #FFFFFF !important;
+  --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+}
+
+/* Forzar que cualquier tarjeta, contenedor o tabla mantenga el diseño limpio de bolsa */
+.card, .table-container, table, div {
+  background-color: transparent;
+}
+
+table, .panel, .card {
+  background-color: #FFFFFF !important;
+  color: #1F2937 !important;
+}
+
+th {
+  background-color: #1E3A8A !important;
+  color: #FFFFFF !important;
+}
+
 .counter {
   font-size: 16px;
   padding: 5px 10px;
@@ -74,6 +99,7 @@
   display: flex;
   border-top: 1px solid var(--border);
   text-align: left;
+  background-color: #FFFFFF !important;
 
   & > div {
     flex: 1 1 0;
@@ -126,6 +152,7 @@
     gap: 8px;
     text-decoration: none;
     transition: box-shadow 0.3s;
+    border: 1px solid var(--border);
 
     &:hover {
       box-shadow: var(--shadow);

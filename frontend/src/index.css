@@ -1,3 +1,8 @@
+/* Forzar que el esquema del navegador sea estrictamente claro (ignora modo oscuro de la laptop) */
+:root {
+  color-scheme: light only !important;
+}
+
 * {
   box-sizing: border-box;
   margin: 0;
@@ -5,21 +10,25 @@
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 
-body {
-  background-color: #f4f6f9;
-  color: #333;
+/* Forzar colores de fondo claros y texto oscuro profesional en todo el cuerpo */
+html, body {
+  background-color: #F3F4F6 !important;
+  color: #1F2937 !important;
 }
 
 .app-container {
   display: flex;
   height: 100vh;
   overflow: hidden;
+  background-color: #F3F4F6 !important;
+  color: #1F2937 !important;
 }
 
 .main-content {
   flex: 1;
   display: flex;
   flex-direction: column;
+  background-color: #F3F4F6 !important;
 }
 
 .workspace {
@@ -32,10 +41,12 @@ body {
 }
 
 .panel {
-  background: #ffffff;
-  border-radius: 12px;
+  background: #FFFFFF !important;
+  color: #1F2937 !important;
+  border-radius: 8px;
   padding: 20px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  border: 1px solid #D1D5DB !important;
   display: flex;
   flex-direction: column;
 }

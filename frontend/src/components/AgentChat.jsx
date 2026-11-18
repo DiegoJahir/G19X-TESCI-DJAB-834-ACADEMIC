@@ -3,20 +3,26 @@ import { Upload, Bot, Send } from 'lucide-react';
 
 export default function AgentChat({ onReconcileSuccess }) {
   const [messages, setMessages] = useState([
-    { sender: 'bot', text: 'Hola Diego, soy el Orquestador Financiero. Sube un estado de cuenta en PDF o Excel para comenzar la conciliación o escríbeme una instrucción.' }
+    { sender: 'bot', text: 'Hola, soy el Orquestador Financiero. Inicia sesión en la parte superior e indícame una instrucción o sube un estado de cuenta.' }
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  // Manejador de subida de archivos hacia FastAPI
+  // Manejador de subida de archivos hacia FastAPI con Token JWT obligatorio
   const handleFileUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
+    const token = localStorage.getItem('token');
+    if (!token) {
+      alert("Por favor inicia sesión en la parte superior antes de conciliar archivos.");
+      return;
+    }
+
     setMessages(prev => [
       ...prev,
       { sender: 'user', text: `Archivo cargado: ${file.name}` },
-      { sender: 'bot', text: 'Procesando estado de cuenta con el backend de FastAPI...' }
+      { sender: 'bot', text: 'Procesando estado de cuenta con autenticación en FastAPI...' }
     ]);
 
     const formData = new FormData();
@@ -25,27 +31,34 @@ export default function AgentChat({ onReconcileSuccess }) {
     try {
       const response = await fetch("http://127.0.0.1:8000/api/reconcile", {
         method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}` // <-- Token JWT adjunto
+        },
         body: formData,
       });
+
+      if (response.status === 401) {
+        alert("Sesión expirada o no autorizada. Por favor vuelve a iniciar sesión.");
+        return;
+      }
 
       if (!response.ok) {
         setMessages(prev => [
           ...prev,
-          { sender: 'bot', text: 'Error al procesar el archivo. Revisa que sea un CSV o Excel válido.' }
+          { sender: 'bot', text: 'Error al procesar el archivo. Revisa tus permisos o formato.' }
         ]);
         return;
       }
 
       const data = await response.json();
 
-      // Notificar a App.jsx para actualizar los componentes en tiempo real
       if (onReconcileSuccess) {
         onReconcileSuccess(data.summary, data.invoices);
       }
 
       setMessages(prev => [
         ...prev,
-        { sender: 'bot', text: '¡Conciliación completada! El tablero se ha actualizado con los resultados dinámicos.' }
+        { sender: 'bot', text: '¡Conciliación completada de forma segura! El tablero se ha actualizado.' }
       ]);
     } catch (error) {
       console.error("Error conectando con la API:", error);
@@ -56,18 +69,23 @@ export default function AgentChat({ onReconcileSuccess }) {
     }
   };
 
-  // Manejador del chat conectado al endpoint real /api/chat (LangGraph + Azure OpenAI)
+  // Manejador del chat conectado al endpoint protegido /api/chat
   const handleSend = async () => {
     if (!input.trim() || isLoading) return;
+
+    const token = localStorage.getItem('token');
+    if (!token) {
+      alert("Por favor inicia sesión en la parte superior para usar el chat agéntico.");
+      return;
+    }
 
     const userMessage = input;
     setInput('');
     
-    // 1. Mostrar el mensaje del usuario y un indicador de carga del bot
     setMessages(prev => [
       ...prev,
       { sender: 'user', text: userMessage },
-      { sender: 'bot', text: 'Analizando tu petición con los agentes de conciliación y riesgo...' }
+      { sender: 'bot', text: 'Analizando tu petición con los agentes de seguridad y riesgo...' }
     ]);
     setIsLoading(true);
 
@@ -76,9 +94,14 @@ export default function AgentChat({ onReconcileSuccess }) {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}` // <-- Token JWT adjunto
         },
         body: JSON.stringify({ message: userMessage }),
       });
+
+      if (response.status === 401) {
+        throw new Error("No autorizado. Inicia sesión nuevamente.");
+      }
 
       if (!response.ok) {
         throw new Error("Error en la respuesta del servidor");
@@ -86,10 +109,9 @@ export default function AgentChat({ onReconcileSuccess }) {
 
       const data = await response.json();
 
-      // 2. Reemplazar el mensaje temporal de carga por la respuesta real de la IA
       setMessages(prev => {
         const newMessages = [...prev];
-        newMessages.pop(); // Quitar el mensaje temporal de "Analizando..."
+        newMessages.pop();
         return [...newMessages, { sender: 'bot', text: data.response }];
       });
     } catch (error) {
@@ -97,7 +119,7 @@ export default function AgentChat({ onReconcileSuccess }) {
       setMessages(prev => {
         const newMessages = [...prev];
         newMessages.pop();
-        return [...newMessages, { sender: 'bot', text: 'Error: No se pudo conectar con el agente inteligente en el backend.' }];
+        return [...newMessages, { sender: 'bot', text: `Error: ${error.message || 'No se pudo conectar con el agente.'}` }];
       });
     } finally {
       setIsLoading(false);
@@ -105,10 +127,21 @@ export default function AgentChat({ onReconcileSuccess }) {
   };
 
   return (
-    <div className="panel" style={{ gap: '15px' }}>
-      <h2>Consola Agéntica IA</h2>
+    <div className="panel" style={{ gap: '15px', display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <h2>Consola Agéntica IA</h2>
+        <span style={{ 
+          fontSize: '11px', 
+          backgroundColor: '#e0f2fe', 
+          color: '#0369a1', 
+          padding: '3px 8px', 
+          borderRadius: '10px',
+          fontWeight: '600'
+        }}>
+          Modo Demo / Asistente Conectado
+        </span>
+      </div>
       
-      {/* Zona de Carga de Archivos */}
       <input
         type="file"
         id="file-input"
@@ -135,7 +168,6 @@ export default function AgentChat({ onReconcileSuccess }) {
         <span style={{ fontSize: '12px', color: '#666' }}>Soporta XLSX, CSV y XLS</span>
       </label>
 
-      {/* Historial de Mensajes / Consola */}
       <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px', paddingRight: '5px' }}>
         {messages.map((msg, index) => (
           <div key={index} style={{
@@ -153,7 +185,6 @@ export default function AgentChat({ onReconcileSuccess }) {
         ))}
       </div>
 
-      {/* Campo de Entrada */}
       <div style={{ display: 'flex', gap: '8px' }}>
         <input
           type="text"

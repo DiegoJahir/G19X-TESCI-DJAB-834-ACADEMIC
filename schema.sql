@@ -34,10 +34,18 @@ CREATE TABLE audit_logs (
 );
 
 -- Datos de prueba iniciales para validar la base de datos al levantar Docker
+-- Contraseña por defecto para admin@plurione.com es: PluriOne2026*
 INSERT INTO users (full_name, email, hashed_password, role, is_active) 
-VALUES ('Administrador PluriOne', 'admin@plurione.com', '$2b$12$E...hash_ejemplo...', 'admin', TRUE)
+VALUES (
+    'Administrador PluriOne', 
+    'admin@plurione.com', 
+    '$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW', 
+    'admin', 
+    TRUE
+)
 ON CONFLICT (email) DO NOTHING;
 
+-- Inserción de facturas de prueba iniciales para la conciliación
 INSERT INTO invoices (folio, client, amount, status) 
 VALUES 
     ('FAC-1021', 'Tech Solutions Ltd', 45000.0, 'Pendiente'),

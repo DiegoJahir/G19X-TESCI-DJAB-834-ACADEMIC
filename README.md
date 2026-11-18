@@ -59,9 +59,9 @@ Sistema agéntico empresarial desarrollado para PluriOne S.A. de C.V. enfocado e
 
 Guía de Prueba (Validación)
 
-(1) Conciliación Bancaria: En la interfaz web (http://localhost:5173), arrastra o selecciona el archivo estado_cuenta_ejemplo.csv incluido en la raíz del repositorio para validar el cruce automático contra las facturas precargadas (FAC-1021, FAC-1022, FAC-1023).
+(1) Conciliación Bancaria: En la interfaz web (http://localhost:5173), arrastra o selecciona el archivo **Estado De Cuenta.csv** (o **Estado De Cuenta.xlsx**) incluido en la raíz del repositorio para validar el cruce automático contra las facturas precargadas (FAC-1021, FAC-1022, FAC-1023).
 
-(2) Consola Agéntica: Escribe una instrucción en el chat inferior (requiere configurar AZURE_OPENAI_API_KEY y AZURE_OPENAI_ENDPOINT en el .env para respuestas generativas del LLM).
+(2) Consola Agéntica: Escribe una instrucción en el chat inferior.
 
 (3) Endpoints REST: Accede a http://127.0.0.1:8000/docs para probar /api/register, /api/login y las rutas protegidas por rol de administrador (/api/users).
 

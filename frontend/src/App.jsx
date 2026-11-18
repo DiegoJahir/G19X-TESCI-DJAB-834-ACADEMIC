@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import Header from './components/Header';
 import AgentChat from './components/AgentChat';
 import DataViewer from './components/DataViewer';
 
@@ -25,21 +26,8 @@ export default function App() {
   return (
     <div className="app-container">
       <div className="main-content">
-        {/* Encabezado Superior */}
-        <header style={{
-          height: '60px',
-          backgroundColor: '#1e293b',
-          color: '#fff',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '0 20px'
-        }}>
-          <h1 style={{ fontSize: '18px', fontWeight: '600' }}>
-            PluriOne FinTech | Arquitectura Agéntica Corporativa
-          </h1>
-          <span style={{ fontSize: '14px', color: '#94a3b8' }}>Usuario: Diego Jahir Almazán</span>
-        </header>
+        {/* Encabezado Superior con Autenticación Interactiva */}
+        <Header />
 
         {/* Zona de Trabajo Dividida */}
         <div className="workspace">

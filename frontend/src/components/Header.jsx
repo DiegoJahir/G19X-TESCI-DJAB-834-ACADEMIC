@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { LogIn, LogOut, UserCheck } from 'lucide-react';
+import { LogIn, LogOut, UserCheck, UserPlus } from 'lucide-react';
 
 export default function Header({ onLoginSuccess }) {
+  const [isRegisterMode, setIsRegisterMode] = useState(false);
+  const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('admin@plurione.com');
   const [password, setPassword] = useState('');
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(localStorage.getItem('token') || '');
   const [userEmail, setUserEmail] = useState(localStorage.getItem('userEmail') || '');
-  const [error, setError] = useState('');
+  const [message, setMessage] = useState({ type: '', text: '' });
   const [isLoading, setIsLoading] = useState(false);
 
   // Recuperar usuario guardado si ya existe token y datos de sesión
@@ -24,44 +26,108 @@ export default function Header({ onLoginSuccess }) {
     }
   }, []);
 
-  const handleLogin = async (e) => {
+  const persistSession = (accessToken, userData, fallbackEmail) => {
+    localStorage.setItem('token', accessToken);
+    setToken(accessToken);
+
+    if (userData) {
+      localStorage.setItem('user', JSON.stringify(userData));
+      localStorage.setItem('userEmail', userData.email || fallbackEmail);
+      setUser(userData);
+      setUserEmail(userData.email || fallbackEmail);
+    } else {
+      localStorage.setItem('userEmail', fallbackEmail);
+      setUserEmail(fallbackEmail);
+    }
+  };
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
+    setMessage({ type: '', text: '' });
     setIsLoading(true);
 
+    const trimmedEmail = email.trim();
+
     try {
-      const response = await fetch('http://127.0.0.1:8000/api/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      });
+      if (isRegisterMode) {
+        // 1. Registrar nuevo usuario (rol 'analyst' asignado en backend)
+        const regResponse = await fetch('http://127.0.0.1:8000/api/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            full_name: fullName.trim(),
+            email: trimmedEmail,
+            password,
+          }),
+        });
 
-      const data = await response.json();
+        const regData = await regResponse.json();
+        if (!regResponse.ok) {
+          setMessage({
+            type: 'error',
+            text: regData?.detail || 'No se pudo completar el registro.',
+          });
+          return;
+        }
 
-      if (!response.ok) {
-        setError(data?.detail || 'Credenciales incorrectas o error en el servidor.');
-        return;
-      }
+        // 2. Iniciar sesión automáticamente tras registrarse para obtener el JWT
+        const loginResponse = await fetch('http://127.0.0.1:8000/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: trimmedEmail,
+            password,
+          }),
+        });
 
-      localStorage.setItem('token', data.access_token);
-      setToken(data.access_token);
-
-      if (data.user) {
-        localStorage.setItem('user', JSON.stringify(data.user));
-        localStorage.setItem('userEmail', data.user.email || email);
-        setUser(data.user);
-        setUserEmail(data.user.email || email);
+        const loginData = await loginResponse.json();
+        if (loginResponse.ok && loginData.access_token) {
+          persistSession(loginData.access_token, loginData.user, trimmedEmail);
+          setPassword('');
+          setFullName('');
+          setIsRegisterMode(false);
+          if (onLoginSuccess) {
+            onLoginSuccess(loginData.access_token);
+          }
+        } else {
+          setIsRegisterMode(false);
+          setPassword('');
+          setMessage({
+            type: 'success',
+            text: 'Usuario registrado. Ahora inicia sesión con tus credenciales.',
+          });
+        }
       } else {
-        localStorage.setItem('userEmail', email);
-        setUserEmail(email);
-      }
+        // Flujo normal de inicio de sesión
+        const response = await fetch('http://127.0.0.1:8000/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: trimmedEmail,
+            password,
+          }),
+        });
 
-      setPassword('');
-      if (onLoginSuccess) {
-        onLoginSuccess(data.access_token);
+        const data = await response.json();
+        if (!response.ok) {
+          setMessage({
+            type: 'error',
+            text: data?.detail || 'Credenciales incorrectas o error en el servidor.',
+          });
+          return;
+        }
+
+        persistSession(data.access_token, data.user, trimmedEmail);
+        setPassword('');
+        if (onLoginSuccess) {
+          onLoginSuccess(data.access_token);
+        }
       }
     } catch (err) {
-      setError('No se pudo conectar con el servidor de autenticación.');
+      setMessage({
+        type: 'error',
+        text: 'No se pudo conectar con el servidor de autenticación.',
+      });
     } finally {
       setIsLoading(false);
     }
@@ -74,7 +140,22 @@ export default function Header({ onLoginSuccess }) {
     setUser(null);
     setToken('');
     setUserEmail('');
+    setMessage({ type: '', text: '' });
     window.location.reload();
+  };
+
+  const toggleMode = () => {
+    setMessage({ type: '', text: '' });
+    setIsRegisterMode((prev) => {
+      const next = !prev;
+      if (next) {
+        setEmail('');
+        setFullName('');
+      } else {
+        setEmail('admin@plurione.com');
+      }
+      return next;
+    });
   };
 
   const isAuthenticated = Boolean(user || token);
@@ -105,7 +186,28 @@ export default function Header({ onLoginSuccess }) {
 
       {/* Control de Autenticación en la Interfaz */}
       {!isAuthenticated ? (
-        <form onSubmit={handleLogin} style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+        <form
+          onSubmit={handleSubmit}
+          style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}
+        >
+          {isRegisterMode && (
+            <input
+              type="text"
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              placeholder="Nombre completo"
+              style={{
+                padding: '6px 10px',
+                borderRadius: '4px',
+                border: '1px solid #475569',
+                backgroundColor: '#0f172a',
+                color: '#fff',
+                fontSize: '13px',
+              }}
+              required
+            />
+          )}
+
           <input
             type="email"
             value={email}
@@ -121,6 +223,7 @@ export default function Header({ onLoginSuccess }) {
             }}
             required
           />
+
           <input
             type="password"
             value={password}
@@ -136,11 +239,12 @@ export default function Header({ onLoginSuccess }) {
             }}
             required
           />
+
           <button
             type="submit"
             disabled={isLoading}
             style={{
-              backgroundColor: '#3b82f6',
+              backgroundColor: isRegisterMode ? '#16a34a' : '#3b82f6',
               color: '#fff',
               border: 'none',
               padding: '7px 14px',
@@ -153,9 +257,41 @@ export default function Header({ onLoginSuccess }) {
               fontWeight: '600',
             }}
           >
-            <LogIn size={15} /> {isLoading ? 'Entrando...' : 'Iniciar Sesión'}
+            {isRegisterMode ? <UserPlus size={15} /> : <LogIn size={15} />}
+            {isLoading
+              ? 'Procesando...'
+              : isRegisterMode
+              ? 'Crear Cuenta'
+              : 'Iniciar Sesión'}
           </button>
-          {error && <span style={{ color: '#fca5a5', fontSize: '12px' }}>{error}</span>}
+
+          <button
+            type="button"
+            onClick={toggleMode}
+            disabled={isLoading}
+            style={{
+              backgroundColor: 'transparent',
+              color: '#e2e8f0',
+              border: '1px solid #475569',
+              padding: '7px 12px',
+              borderRadius: '4px',
+              cursor: isLoading ? 'not-allowed' : 'pointer',
+              fontSize: '13px',
+            }}
+          >
+            {isRegisterMode ? 'Volver a Login' : 'Registrarse'}
+          </button>
+
+          {message.text && (
+            <span
+              style={{
+                color: message.type === 'error' ? '#fca5a5' : '#86efac',
+                fontSize: '12px',
+              }}
+            >
+              {message.text}
+            </span>
+          )}
         </form>
       ) : (
         <div style={{ display: 'flex', alignItems: 'center', gap: '15px', flexWrap: 'wrap' }}>

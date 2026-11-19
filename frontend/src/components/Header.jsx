@@ -3,40 +3,65 @@ import { LogIn, LogOut, UserCheck } from 'lucide-react';
 
 export default function Header({ onLoginSuccess }) {
   const [email, setEmail] = useState('admin@plurione.com');
-  const [password, setPassword] = useState('PluriOne2026*');
+  const [password, setPassword] = useState('');
+  const [user, setUser] = useState(null);
   const [token, setToken] = useState(localStorage.getItem('token') || '');
   const [userEmail, setUserEmail] = useState(localStorage.getItem('userEmail') || '');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
+  // Recuperar usuario guardado si ya existe token y datos de sesión
+  useEffect(() => {
+    const savedUser = localStorage.getItem('user');
+    const savedToken = localStorage.getItem('token');
+    if (savedUser && savedToken) {
+      try {
+        const parsedUser = JSON.parse(savedUser);
+        setUser(parsedUser);
+        setToken(savedToken);
+        if (parsedUser?.email) setUserEmail(parsedUser.email);
+      } catch (_) {}
+    }
+  }, []);
+
   const handleLogin = async (e) => {
     e.preventDefault();
-    setIsLoading(true);
     setError('');
+    setIsLoading(true);
 
     try {
-      const response = await fetch("http://127.0.0.1:8000/api/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+      const response = await fetch('http://127.0.0.1:8000/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
       });
 
+      const data = await response.json();
+
       if (!response.ok) {
-        throw new Error("Credenciales incorrectas o error en el servidor.");
+        setError(data?.detail || 'Credenciales incorrectas o error en el servidor.');
+        return;
       }
 
-      const data = await response.json();
-      
-      // Guardar token y usuario en localStorage
       localStorage.setItem('token', data.access_token);
-      localStorage.setItem('userEmail', data.user.email);
-      
       setToken(data.access_token);
-      setUserEmail(data.user.email);
-      if (onLoginSuccess) onLoginSuccess(data.access_token);
 
+      if (data.user) {
+        localStorage.setItem('user', JSON.stringify(data.user));
+        localStorage.setItem('userEmail', data.user.email || email);
+        setUser(data.user);
+        setUserEmail(data.user.email || email);
+      } else {
+        localStorage.setItem('userEmail', email);
+        setUserEmail(email);
+      }
+
+      setPassword('');
+      if (onLoginSuccess) {
+        onLoginSuccess(data.access_token);
+      }
     } catch (err) {
-      setError("Error al iniciar sesión. Verifica tus credenciales.");
+      setError('No se pudo conectar con el servidor de autenticación.');
     } finally {
       setIsLoading(false);
     }
@@ -44,23 +69,31 @@ export default function Header({ onLoginSuccess }) {
 
   const handleLogout = () => {
     localStorage.removeItem('token');
+    localStorage.removeItem('user');
     localStorage.removeItem('userEmail');
+    setUser(null);
     setToken('');
     setUserEmail('');
     window.location.reload();
   };
 
+  const isAuthenticated = Boolean(user || token);
+
   return (
-    <header style={{
-      height: '70px',
-      backgroundColor: '#1e293b',
-      color: '#fff',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      padding: '0 20px',
-      borderBottom: '1px solid #334155'
-    }}>
+    <header
+      style={{
+        minHeight: '70px',
+        backgroundColor: '#1e293b',
+        color: '#fff',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '10px 20px',
+        borderBottom: '1px solid #334155',
+        gap: '12px',
+        flexWrap: 'wrap',
+      }}
+    >
       <div>
         <h1 style={{ fontSize: '18px', fontWeight: '600', margin: 0 }}>
           PluriOne FinTech | Arquitectura Agéntica Corporativa
@@ -71,14 +104,21 @@ export default function Header({ onLoginSuccess }) {
       </div>
 
       {/* Control de Autenticación en la Interfaz */}
-      {!token ? (
-        <form onSubmit={handleLogin} style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+      {!isAuthenticated ? (
+        <form onSubmit={handleLogin} style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
           <input
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="Correo"
-            style={{ padding: '6px 10px', borderRadius: '4px', border: '1px solid #475569', backgroundColor: '#0f172a', color: '#fff', fontSize: '13px' }}
+            style={{
+              padding: '6px 10px',
+              borderRadius: '4px',
+              border: '1px solid #475569',
+              backgroundColor: '#0f172a',
+              color: '#fff',
+              fontSize: '13px',
+            }}
             required
           />
           <input
@@ -86,7 +126,14 @@ export default function Header({ onLoginSuccess }) {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="Contraseña"
-            style={{ padding: '6px 10px', borderRadius: '4px', border: '1px solid #475569', backgroundColor: '#0f172a', color: '#fff', fontSize: '13px' }}
+            style={{
+              padding: '6px 10px',
+              borderRadius: '4px',
+              border: '1px solid #475569',
+              backgroundColor: '#0f172a',
+              color: '#fff',
+              fontSize: '13px',
+            }}
             required
           />
           <button
@@ -98,23 +145,26 @@ export default function Header({ onLoginSuccess }) {
               border: 'none',
               padding: '7px 14px',
               borderRadius: '4px',
-              cursor: 'pointer',
+              cursor: isLoading ? 'not-allowed' : 'pointer',
               display: 'flex',
               alignItems: 'center',
               gap: '6px',
               fontSize: '13px',
-              fontWeight: '600'
+              fontWeight: '600',
             }}
           >
             <LogIn size={15} /> {isLoading ? 'Entrando...' : 'Iniciar Sesión'}
           </button>
-          {error && <span style={{ color: '#ef4444', fontSize: '11px' }}>{error}</span>}
+          {error && <span style={{ color: '#fca5a5', fontSize: '12px' }}>{error}</span>}
         </form>
       ) : (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '15px', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '14px', color: '#cbd5e1' }}>
             <UserCheck size={16} color="#22c55e" />
-            <span>{userEmail}</span>
+            <span>
+              {user?.full_name || user?.email || userEmail}
+              {user?.role ? ` (${user.role})` : ''}
+            </span>
           </div>
           <button
             onClick={handleLogout}
@@ -128,7 +178,7 @@ export default function Header({ onLoginSuccess }) {
               display: 'flex',
               alignItems: 'center',
               gap: '5px',
-              fontSize: '13px'
+              fontSize: '13px',
             }}
           >
             <LogOut size={14} /> Salir

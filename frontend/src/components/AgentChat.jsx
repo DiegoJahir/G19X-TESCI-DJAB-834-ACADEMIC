@@ -3,14 +3,18 @@ import { Upload, Bot, Send } from 'lucide-react';
 
 export default function AgentChat({ onReconcileSuccess }) {
   const [messages, setMessages] = useState([
-    { sender: 'bot', text: 'Hola, soy el Orquestador Financiero. Inicia sesión en la parte superior e indícame una instrucción o sube un estado de cuenta.' }
+    {
+      sender: 'bot',
+      text: 'Hola, soy el Orquestador Financiero. Inicia sesión en la parte superior e indícame una instrucción o sube un estado de cuenta en CSV o Excel.'
+    }
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
   // Manejador de subida de archivos hacia FastAPI con Token JWT obligatorio
   const handleFileUpload = async (e) => {
-    const file = e.target.files[0];
+    const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
 
     const token = localStorage.getItem('token');
@@ -32,7 +36,7 @@ export default function AgentChat({ onReconcileSuccess }) {
       const response = await fetch("http://127.0.0.1:8000/api/reconcile", {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${token}` // <-- Token JWT adjunto
+          "Authorization": `Bearer ${token}`
         },
         body: formData,
       });
@@ -43,9 +47,15 @@ export default function AgentChat({ onReconcileSuccess }) {
       }
 
       if (!response.ok) {
+        let errorMsg = 'Error al procesar el archivo. Revisa tus permisos o formato (CSV, XLSX o XLS).';
+        try {
+          const errData = await response.json();
+          if (errData?.detail) errorMsg = errData.detail;
+        } catch (_) {}
+
         setMessages(prev => [
           ...prev,
-          { sender: 'bot', text: 'Error al procesar el archivo. Revisa tus permisos o formato.' }
+          { sender: 'bot', text: errorMsg }
         ]);
         return;
       }
@@ -81,7 +91,7 @@ export default function AgentChat({ onReconcileSuccess }) {
 
     const userMessage = input;
     setInput('');
-    
+
     setMessages(prev => [
       ...prev,
       { sender: 'user', text: userMessage },
@@ -94,7 +104,7 @@ export default function AgentChat({ onReconcileSuccess }) {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}` // <-- Token JWT adjunto
+          "Authorization": `Bearer ${token}`
         },
         body: JSON.stringify({ message: userMessage }),
       });
@@ -130,18 +140,18 @@ export default function AgentChat({ onReconcileSuccess }) {
     <div className="panel" style={{ gap: '15px', display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h2>Consola Agéntica IA</h2>
-        <span style={{ 
-          fontSize: '11px', 
-          backgroundColor: '#e0f2fe', 
-          color: '#0369a1', 
-          padding: '3px 8px', 
+        <span style={{
+          fontSize: '11px',
+          backgroundColor: '#e0f2fe',
+          color: '#0369a1',
+          padding: '3px 8px',
           borderRadius: '10px',
           fontWeight: '600'
         }}>
           Modo Demo / Asistente Conectado
         </span>
       </div>
-      
+
       <input
         type="file"
         id="file-input"
@@ -163,7 +173,7 @@ export default function AgentChat({ onReconcileSuccess }) {
       >
         <Upload size={32} color="#4a90e2" />
         <p style={{ marginTop: '8px', fontSize: '14px', fontWeight: 'bold', color: '#1e293b' }}>
-          Arrastra tu Estado de Cuenta (PDF/Excel)
+          Arrastra tu Estado de Cuenta (CSV / Excel)
         </p>
         <span style={{ fontSize: '12px', color: '#666' }}>Soporta XLSX, CSV y XLS</span>
       </label>
@@ -195,8 +205,8 @@ export default function AgentChat({ onReconcileSuccess }) {
           disabled={isLoading}
           style={{ flex: 1, padding: '10px', borderRadius: '6px', border: '1px solid #ccc' }}
         />
-        <button 
-          onClick={handleSend} 
+        <button
+          onClick={handleSend}
           disabled={isLoading}
           style={{ backgroundColor: '#007bff', color: '#fff', border: 'none', padding: '10px 15px', borderRadius: '6px', cursor: isLoading ? 'not-allowed' : 'pointer', opacity: isLoading ? 0.7 : 1 }}
         >

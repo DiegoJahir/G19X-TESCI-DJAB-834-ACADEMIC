@@ -164,6 +164,7 @@ export default function Header({ onLoginSuccess }) {
     <header
       style={{
         minHeight: '70px',
+        maxWidth: '100%',
         backgroundColor: '#1e293b',
         color: '#fff',
         display: 'flex',
@@ -175,8 +176,9 @@ export default function Header({ onLoginSuccess }) {
         flexWrap: 'wrap',
       }}
     >
-      <div>
-        <h1 style={{ fontSize: '18px', fontWeight: '600', margin: 0 }}>
+
+      <div style={{ minWidth: 0, flex: '1 1 240px' }}>
+        <h1 style={{ fontSize: '18px', fontWeight: '600', margin: 0, overflowWrap: 'anywhere' }}>
           PluriOne FinTech | Arquitectura Agéntica Corporativa
         </h1>
         <span style={{ fontSize: '12px', color: '#94a3b8' }}>
@@ -197,6 +199,8 @@ export default function Header({ onLoginSuccess }) {
               onChange={(e) => setFullName(e.target.value)}
               placeholder="Nombre completo"
               style={{
+                maxWidth: '100%',
+                minWidth: '0',
                 padding: '6px 10px',
                 borderRadius: '4px',
                 border: '1px solid #475569',
@@ -214,6 +218,8 @@ export default function Header({ onLoginSuccess }) {
             onChange={(e) => setEmail(e.target.value)}
             placeholder="Correo"
             style={{
+              maxWidth: '100%',
+              minWidth: '0',              
               padding: '6px 10px',
               borderRadius: '4px',
               border: '1px solid #475569',
@@ -230,6 +236,8 @@ export default function Header({ onLoginSuccess }) {
             onChange={(e) => setPassword(e.target.value)}
             placeholder="Contraseña"
             style={{
+              maxWidth: '100%',
+              minWidth: '0',
               padding: '6px 10px',
               borderRadius: '4px',
               border: '1px solid #475569',

@@ -244,25 +244,35 @@ async def reconcile_statement(
     df.columns = [str(col).strip().lower() for col in df.columns]
 
     abonos = []
-    if 'abono' in df.columns:
-        abonos = df['abono'].dropna().tolist()
-    elif 'monto' in df.columns:
-        abonos = df['monto'].dropna().tolist()
+    for col_name in ['abono', 'monto', 'importe', 'deposito']:
+        if col_name in df.columns:
+            abonos = df[col_name].dropna().tolist()
+            break
 
     conciliated_total = 0.0
     pending_risk_total = 0.0
     results = []
+    unmatched_abonos = []
+
+    abonos_validos = [float(a) for a in abonos if pd.notnull(a)]
+    matched_abono_indices = set()
 
     for inv in invoices:
-        match_found = any(abs(float(inv.amount) - float(abono)) < 1.0 for abono in abonos if pd.notnull(abono))
-        
-        if match_found:
+        inv_amount = float(inv.amount)
+        matched_idx = next(
+            (i for i, abono in enumerate(abonos_validos)
+             if i not in matched_abono_indices and abs(inv_amount - abono) < 1.0),
+            None
+        )
+
+        if matched_idx is not None:
+            matched_abono_indices.add(matched_idx)
             inv.status = "Conciliado"
-            conciliated_total += inv.amount
+            conciliated_total += inv_amount
         else:
             inv.status = "Pendiente"
-            pending_risk_total += inv.amount
-            
+            pending_risk_total += inv_amount
+
         results.append({
             "folio": inv.folio,
             "client": inv.client,
@@ -270,12 +280,17 @@ async def reconcile_statement(
             "status": inv.status
         })
 
+    for i, abono in enumerate(abonos_validos):
+        if i not in matched_abono_indices:
+            unmatched_abonos.append(abono)
+
     db.commit()
 
     return {
         "summary": {
             "conciliated_amount": conciliated_total,
-            "risk_amount": pending_risk_total
+            "risk_amount": pending_risk_total,
+            "unmatched_abonos": unmatched_abonos
         },
         "invoices": results
     }

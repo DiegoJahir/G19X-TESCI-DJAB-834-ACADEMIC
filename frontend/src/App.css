@@ -1,3 +1,39 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root,
+.app-container,
+.main-content {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+.workspace {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  width: 100%;
+}
+
+.workspace > * {
+  flex: 1 1 360px;
+  min-width: 0;
+}
+
+@media (max-width: 768px) {
+  .workspace {
+    flex-direction: column;
+  }
+
+  .workspace > * {
+    flex: 1 1 100%;
+    width: 100%;
+  }
+}
+
 :root {
   --accent: #1E3A8A !important;
   --accent-bg: #EFF6FF !important;

@@ -5,17 +5,14 @@ from langchain_core.messages import AIMessage
 from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
+from agents.tools import consultar_facturas_postgres
+
+tools = [consultar_facturas_postgres]
 
 UNAVAILABLE_MSG = "El asistente no está disponible: falta configurar la llave del modelo"
 
-
 class AgentState(TypedDict):
     messages: Annotated[list, add_messages]
-
-
-# Lista de herramientas (en el siguiente paso agregaremos aquí la consulta real a PostgreSQL)
-tools = []
-
 
 def get_ai_model():
     llm = None

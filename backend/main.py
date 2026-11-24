@@ -243,30 +243,56 @@ async def reconcile_statement(
 
     df.columns = [str(col).strip().lower() for col in df.columns]
 
-    abonos = []
+    abono_col = None
     for col_name in ['abono', 'monto', 'importe', 'deposito']:
         if col_name in df.columns:
-            abonos = df[col_name].dropna().tolist()
+            abono_col = col_name
             break
+
+    desc_col = next(
+        (c for c in ['concepto', 'descripcion', 'descripción', 'referencia', 'detalle', 'folio', 'observaciones'] if c in df.columns),
+        None
+    )
+
+    movimientos = []
+    if abono_col is not None:
+        for _, row in df.iterrows():
+            val = row[abono_col]
+            if pd.notnull(val):
+                try:
+                    monto_val = float(str(val).replace('$', '').replace(',', '').strip())
+                except ValueError:
+                    continue
+                if monto_val > 0:
+                    detalle_texto = str(row[desc_col]).strip() if desc_col and pd.notnull(row[desc_col]) else ""
+                    movimientos.append({
+                        "amount": monto_val,
+                        "detail": detalle_texto
+                    })
 
     conciliated_total = 0.0
     pending_risk_total = 0.0
     results = []
-    unmatched_abonos = []
-
-    abonos_validos = [float(a) for a in abonos if pd.notnull(a)]
-    matched_abono_indices = set()
+    matched_indices = set()
 
     for inv in invoices:
         inv_amount = float(inv.amount)
-        matched_idx = next(
-            (i for i, abono in enumerate(abonos_validos)
-             if i not in matched_abono_indices and abs(inv_amount - abono) < 1.0),
-            None
-        )
+        folio_lower = str(inv.folio).strip().lower()
+
+        matched_idx = None
+        for idx, mov in enumerate(movimientos):
+            if idx in matched_indices:
+                continue
+            detail_lower = mov["detail"].lower()
+            es_parcial = "parcial" in detail_lower
+            tiene_otro_folio = ("fac-" in detail_lower) and (folio_lower not in detail_lower)
+
+            if not es_parcial and not tiene_otro_folio and abs(inv_amount - mov["amount"]) < 1.0:
+                matched_idx = idx
+                break
 
         if matched_idx is not None:
-            matched_abono_indices.add(matched_idx)
+            matched_indices.add(matched_idx)
             inv.status = "Conciliado"
             conciliated_total += inv_amount
         else:
@@ -280,9 +306,15 @@ async def reconcile_statement(
             "status": inv.status
         })
 
-    for i, abono in enumerate(abonos_validos):
-        if i not in matched_abono_indices:
-            unmatched_abonos.append(abono)
+    unmatched_abonos = []
+    unmatched_details = []
+    for idx, mov in enumerate(movimientos):
+        if idx not in matched_indices:
+            unmatched_abonos.append(mov["amount"])
+            unmatched_details.append({
+                "amount": mov["amount"],
+                "detail": mov["detail"] or "Movimiento / depósito sin identificar o parcial"
+            })
 
     db.commit()
 
@@ -290,7 +322,8 @@ async def reconcile_statement(
         "summary": {
             "conciliated_amount": conciliated_total,
             "risk_amount": pending_risk_total,
-            "unmatched_abonos": unmatched_abonos
+            "unmatched_abonos": unmatched_abonos,
+            "unmatched_details": unmatched_details
         },
         "invoices": results
     }
@@ -315,7 +348,15 @@ async def chat_with_agent(
         from agents.workflow import app_agent
         from langchain_core.messages import HumanMessage
 
-        initial_state = {"messages": [HumanMessage(content=request.message)]}
+        context_summary = (
+            f"Monto Conciliado: ${conciliated_total:,.2f} MXN | "
+            f"Riesgo / Pendiente: ${risk_total:,.2f} MXN | "
+            f"Facturas: " + ", ".join([f"{inv.folio} ({inv.status}: ${float(inv.amount):,.2f})" for inv in invoices])
+        )
+        initial_state = {
+            "messages": [HumanMessage(content=request.message)],
+            "context": context_summary
+        }
         output = app_agent.invoke(initial_state)
         final_message = output["messages"][-1]
         

@@ -9,16 +9,19 @@ from langchain_core.messages import AIMessage
 # 1. Definir el estado del agente
 class AgentState(TypedDict):
     messages: list
-
+    context: str
+    
 # 2. Definir la Tool de Conciliación
 @tool
 def reconcile_bank_statement(statement_path: str) -> str:
     """
-    Analiza y concilia el estado de cuenta bancario contra las facturas registradas,
-    detectando discrepancias, riesgos o montos no conciliados.
+    Indica cómo se ejecuta la conciliación del estado de cuenta contra las facturas registradas.
     """
     try:
-        return f"Conciliación exitosa para el archivo {statement_path}. Se revisaron los movimientos y no se detectaron riesgos críticos de discrepancia."
+        return (
+            f"Archivo '{statement_path}' recibido. La conciliación real contra facturas y "
+            "base de datos se realiza desde el endpoint /api/reconcile."
+        )
     except Exception as e:
         return f"Error al procesar la conciliación: {str(e)}"
 
@@ -45,32 +48,22 @@ model = get_ai_model()
 # 4. Definición de nodos con manejo robusto, permanente y altamente inteligente
 def call_model(state: AgentState):
     messages = state["messages"]
-    
-    # Si hay un modelo real configurado y activo, lo invoca con normalidad
+    context = state.get("context", "")
+
     if model is not None:
         try:
             response = model.invoke(messages)
             return {"messages": [response]}
         except Exception:
-            pass  # Si falla la red o la cuota, pasa al respaldo inteligente ampliado
+            pass
 
-    # Motor autónomo de respaldo altamente robusto (Cubre variaciones y preguntas abiertas)
-    last_user_msg = messages[-1].content.lower()
-    
-    if any(k in last_user_msg for k in ["pendiente", "riesgo", "discrepancia", "alerta", "no conciliados"]):
-        ai_response = "Análisis Agéntico (PluriOne Core): Se detectó un riesgo crítico de $98,000 MXN correspondiente al folio FAC-1023 (Consultoría Global) que se encuentra pendiente de conciliación bancaria."
-    elif any(k in last_user_msg for k in ["conciliada", "resumen", "ingresos", "total"]):
-        ai_response = "Análisis Agéntico (PluriOne Core): Las cuentas conciliadas ascienden a $155,500 MXN, sincronizadas en tiempo real mediante el motor de Pandas y la base de datos PostgreSQL."
-    elif any(k in last_user_msg for k in ["fac-1021", "tech solutions", "trazabilidad"]):
-        ai_response = "Auditoría de Folio (FAC-1021): Transacción verificada por $45,000 MXN a nombre de Tech Solutions Ltd. Estado actual: Conciliado exitosamente en el sistema."
-    elif any(k in last_user_msg for k in ["depósitos", "externos", "identificados", "corte"]):
-        ai_response = "Análisis de Pasarela: No se encontraron depósitos externos sin identificar en el último corte; todas las entradas están mapeadas contra facturas vigentes."
-    elif any(k in last_user_msg for k in ["flujo", "reporte", "financiero", "corporativo"]):
-        ai_response = "Reporte de Flujo Corporativo (PluriOne FinTech): El pipeline de conciliación opera con 100% de integridad relacional. El balance general se mantiene estable."
-    elif any(k in last_user_msg for k in ["postgresql", "base de datos", "pandas", "sincronización"]):
-        ai_response = "Validación de Infraestructura: Los DataFrames de Pandas procesaron exitosamente el CSV y los registros fueron validados contra el esquema relacional de PostgreSQL."
+    if context:
+        ai_response = f"Orquestador Financiero PluriOne -> {context}"
     else:
-        ai_response = f"Orquestador Financiero PluriOne: Analizando consulta sobre '{messages[-1].content}'. El flujo agéntico de LangGraph ha validado los registros contables sin anomalías."
+        ai_response = (
+            f"Orquestador Financiero PluriOne: Consulta recibida ('{messages[-1].content}'). "
+            "Para cifras exactas y facturas actuales, consulta el estado en la base de datos."
+        )
 
     return {"messages": [AIMessage(content=ai_response)]}
 

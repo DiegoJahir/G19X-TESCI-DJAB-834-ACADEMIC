@@ -1,3 +1,5 @@
+from langchain_core.messages import HumanMessage
+from agents.workflow import app_agent, UNAVAILABLE_MSG
 from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File
 from fastapi.security import OAuth2PasswordBearer
 from fastapi.middleware.cors import CORSMiddleware
@@ -331,55 +333,18 @@ async def reconcile_statement(
 # --- ENDPOINT DEL AGENTE INTELIGENTE (CON RESPALDO INTELIGENTE) ---
 
 @app.post("/api/chat")
-async def chat_with_agent(
+def chat_with_agent(
     request: ChatRequest,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user)
+    current_user: models.User = Depends(get_current_user),
 ):
-    user_msg = request.message.lower()
-    
-    # Consultar facturas y calcular montos reales actualizados de la BD
-    invoices = db.query(models.Invoice).all()
-    conciliated_total = sum(float(inv.amount) for inv in invoices if inv.status == "Conciliado")
-    risk_total = sum(float(inv.amount) for inv in invoices if inv.status != "Conciliado")
-    
+    user_message = (request.message or "").strip()
+    if not user_message:
+        raise HTTPException(status_code=400, detail="El mensaje no puede estar vacío.")
+
     try:
-        # Intento de ejecución con LangGraph / LLM si está configurado
-        from agents.workflow import app_agent
-        from langchain_core.messages import HumanMessage
-
-        context_summary = (
-            f"Monto Conciliado: ${conciliated_total:,.2f} MXN | "
-            f"Riesgo / Pendiente: ${risk_total:,.2f} MXN | "
-            f"Facturas: " + ", ".join([f"{inv.folio} ({inv.status}: ${float(inv.amount):,.2f})" for inv in invoices])
-        )
-        initial_state = {
-            "messages": [HumanMessage(content=request.message)],
-            "context": context_summary
-        }
-        output = app_agent.invoke(initial_state)
-        final_message = output["messages"][-1]
-        
-        return {
-            "status": "success",
-            "response": final_message.content
-        }
-    except Exception as e:
-        # Modo Respaldo Inteligente y Contextual
-        if any(word in user_msg for word in ["capital", "francia", "clima", "hola", "quién eres", "ayuda"]):
-            if "capital" in user_msg or "francia" in user_msg:
-                resp = "Como asistente financiero corporativo de PluriOne, mi enfoque es la conciliación y el análisis de riesgo. No tengo información geográfica sobre capitales, pero con gusto puedo ayudarte con el estado actual de las facturas."
-            else:
-                resp = f"Hola {current_user.full_name}, soy el orquestador financiero de PluriOne. Actualmente tenemos ${conciliated_total:,.2f} MXN conciliados y ${risk_total:,.2f} MXN en riesgo. ¿En qué te puedo ayudar?"
-        elif "resumen" in user_msg or "estado" in user_msg or "total" in user_msg or "riesgo" in user_msg or "cuáles" in user_msg:
-            resp = f"Análisis Financiero Actualizado -> Monto Conciliado: ${conciliated_total:,.2f} MXN | Riesgo / Pendiente: ${risk_total:,.2f} MXN."
-        elif "factura" in user_msg or "folio" in user_msg:
-            detalle = ", ".join([f"{inv.folio} ({inv.client}: ${inv.amount:,.2f} - {inv.status})" for inv in invoices])
-            resp = f"Facturas registradas en el sistema: {detalle}."
-        else:
-            resp = f"Orquestador PluriOne: Instrucción recibida ('{request.message}'). El tablero muestra actualmente ${conciliated_total:,.2f} MXN conciliados y ${risk_total:,.2f} MXN en riesgo."
-
-        return {
-            "status": "success",
-            "response": resp
-        }
+        result = app_agent.invoke({"messages": [HumanMessage(content=user_message)]})
+        messages = result.get("messages", [])
+        reply = messages[-1].content if messages else UNAVAILABLE_MSG
+        return {"response": reply}
+    except Exception:
+        return {"response": UNAVAILABLE_MSG}

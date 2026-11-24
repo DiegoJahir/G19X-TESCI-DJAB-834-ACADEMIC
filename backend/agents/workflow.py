@@ -1,86 +1,69 @@
 import os
 from typing import Annotated, TypedDict
 from langchain_openai import AzureChatOpenAI, ChatOpenAI
-from langchain_core.tools import tool
-from langgraph.graph import StateGraph, END
-from langgraph.prebuilt import ToolNode
 from langchain_core.messages import AIMessage
+from langgraph.graph import StateGraph, END
+from langgraph.graph.message import add_messages
+from langgraph.prebuilt import ToolNode
 
-# 1. Definir el estado del agente
+UNAVAILABLE_MSG = "El asistente no está disponible: falta configurar la llave del modelo"
+
+
 class AgentState(TypedDict):
-    messages: list
-    context: str
-    
-# 2. Definir la Tool de Conciliación
-@tool
-def reconcile_bank_statement(statement_path: str) -> str:
-    """
-    Indica cómo se ejecuta la conciliación del estado de cuenta contra las facturas registradas.
-    """
-    try:
-        return (
-            f"Archivo '{statement_path}' recibido. La conciliación real contra facturas y "
-            "base de datos se realiza desde el endpoint /api/reconcile."
-        )
-    except Exception as e:
-        return f"Error al procesar la conciliación: {str(e)}"
+    messages: Annotated[list, add_messages]
 
-tools = [reconcile_bank_statement]
-tool_node = ToolNode(tools)
 
-# 3. Configuración permanente: Selector inteligente de proveedor con soporte nativo de respaldo
+# Lista de herramientas (en el siguiente paso agregaremos aquí la consulta real a PostgreSQL)
+tools = []
+
+
 def get_ai_model():
+    llm = None
     if os.getenv("AZURE_OPENAI_API_KEY"):
-        return AzureChatOpenAI(
+        llm = AzureChatOpenAI(
             azure_deployment=os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", "gpt-4o"),
-            api_version="2024-02-15-preview",
-            temperature=0.1
-        ).bind_tools(tools)
+            api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-15-preview"),
+            temperature=0.1,
+        )
     elif os.getenv("OPENAI_API_KEY"):
-        return ChatOpenAI(
-            model="gpt-4o-mini",
-            temperature=0.1
-        ).bind_tools(tools)
-    return None  # Retorna None si no hay llaves, activando el modo autónomo de respaldo
-
-model = get_ai_model()
-
-# 4. Definición de nodos con manejo robusto, permanente y altamente inteligente
-def call_model(state: AgentState):
-    messages = state["messages"]
-    context = state.get("context", "")
-
-    if model is not None:
-        try:
-            response = model.invoke(messages)
-            return {"messages": [response]}
-        except Exception:
-            pass
-
-    if context:
-        ai_response = f"Orquestador Financiero PluriOne -> {context}"
-    else:
-        ai_response = (
-            f"Orquestador Financiero PluriOne: Consulta recibida ('{messages[-1].content}'). "
-            "Para cifras exactas y facturas actuales, consulta el estado en la base de datos."
+        llm = ChatOpenAI(
+            model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+            temperature=0.1,
         )
 
-    return {"messages": [AIMessage(content=ai_response)]}
+    if llm is None:
+        return None
+    return llm.bind_tools(tools) if tools else llm
+
+
+def call_model(state: AgentState):
+    model = get_ai_model()
+    if model is None:
+        return {"messages": [AIMessage(content=UNAVAILABLE_MSG)]}
+
+    try:
+        response = model.invoke(state["messages"])
+        return {"messages": [response]}
+    except Exception:
+        return {"messages": [AIMessage(content=UNAVAILABLE_MSG)]}
+
 
 def should_continue(state: AgentState):
-    messages = state["messages"]
-    last_message = messages[-1]
+    last_message = state["messages"][-1]
     if hasattr(last_message, "tool_calls") and last_message.tool_calls:
         return "tools"
     return END
 
-# 5. Construcción y compilación permanente del grafo
+
 workflow = StateGraph(AgentState)
 workflow.add_node("agent", call_model)
-workflow.add_node("tools", tool_node)
-
 workflow.set_entry_point("agent")
-workflow.add_conditional_edges("agent", should_continue)
-workflow.add_edge("tools", "agent")
+
+if tools:
+    workflow.add_node("tools", ToolNode(tools))
+    workflow.add_conditional_edges("agent", should_continue)
+    workflow.add_edge("tools", "agent")
+else:
+    workflow.add_edge("agent", END)
 
 app_agent = workflow.compile()

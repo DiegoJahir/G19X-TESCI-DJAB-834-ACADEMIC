@@ -17,11 +17,13 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 def hash_password(password: str) -> str:
     """Genera el hash seguro de la contraseña usando bcrypt."""
-    return pwd_context.hash(password)
+    safe_password = password.encode("utf-8")[:72]
+    return pwd_context.hash(safe_password)
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verifica si una contraseña en texto plano coincide con su hash."""
-    return pwd_context.verify(plain_password, hashed_password)
+    safe_password = plain_password.encode("utf-8")[:72]
+    return pwd_context.verify(safe_password, hashed_password)
 
 def create_access_token(data: dict) -> str:
     """Crea un token JWT firmado digitalmente incluyendo fecha de expiración."""

@@ -341,10 +341,26 @@ def chat_with_agent(
     if not user_message:
         raise HTTPException(status_code=400, detail="El mensaje no puede estar vacío.")
 
+    config = {"configurable": {"thread_id": f"user-{current_user.email}"}}
+
     try:
-        result = app_agent.invoke({"messages": [HumanMessage(content=user_message)]})
+        result = app_agent.invoke(
+            {"messages": [HumanMessage(content=user_message)]},
+            config=config,
+        )
         messages = result.get("messages", [])
-        reply = messages[-1].content if messages else UNAVAILABLE_MSG
-        return {"response": reply}
+        if not messages:
+            return {"response": UNAVAILABLE_MSG}
+
+        raw_content = messages[-1].content
+        if isinstance(raw_content, list):
+            reply = " ".join(
+                block.get("text", "") if isinstance(block, dict) else str(block)
+                for block in raw_content
+            ).strip()
+        else:
+            reply = str(raw_content or "").strip()
+
+        return {"response": reply if reply else UNAVAILABLE_MSG}
     except Exception:
         return {"response": UNAVAILABLE_MSG}

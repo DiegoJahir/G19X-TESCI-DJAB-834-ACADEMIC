@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 from typing import Annotated, TypedDict
 from dotenv import load_dotenv
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_ollama import ChatOllama
 from langchain_core.messages import AIMessage, SystemMessage
 from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
@@ -15,9 +15,12 @@ load_dotenv(dotenv_path=ENV_PATH, override=True)
 
 tools = [consultar_facturas_postgres]
 
-UNAVAILABLE_MSG = "El asistente no está disponible: falta configurar la llave del modelo"
-QUOTA_MSG = "Se alcanzó el límite de cuota del modelo actual (429). Intenta más tarde o cambia GEMINI_MODEL en .env."
-BUSY_MSG = "El servicio de IA está saturado temporalmente (503). Intenta de nuevo en unos segundos."
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:3b").strip()
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").strip()
+UNAVAILABLE_MSG = (
+    f"El asistente local no está disponible: verifica que Ollama esté activo "
+    f"en {OLLAMA_BASE_URL} y que el modelo '{OLLAMA_MODEL}' esté descargado."
+)
 
 SYSTEM_PROMPT = SystemMessage(
     content=(
@@ -36,56 +39,26 @@ class AgentState(TypedDict):
 
 
 def build_model(model_name: str):
-    api_key = os.getenv("GOOGLE_API_KEY", "").strip()
-    if not api_key:
-        return None
-    llm = ChatGoogleGenerativeAI(
-        google_api_key=api_key,
+    llm = ChatOllama(
         model=model_name,
+        base_url=OLLAMA_BASE_URL,
         temperature=0,
-        max_retries=0,
-        timeout=15,
     )
     return llm.bind_tools(tools)
 
 
-def _get_candidate_models() -> list[str]:
-    configured = os.getenv("GEMINI_MODEL", "gemini-3.8-flash-lite").strip()
-    ordered = [
-        configured,
-        "gemini-3.8-flash-lite",
-        "gemini-2.5-pro",
-        "gemini-3.8-flash",
-    ]
-    return [m for m in dict.fromkeys(ordered) if m]
-
-
 def call_model(state: AgentState):
-    api_key = os.getenv("GOOGLE_API_KEY", "").strip()
-    if not api_key:
-        return {"messages": [AIMessage(content=UNAVAILABLE_MSG)]}
-
     history = state.get("messages", [])
     has_system = any(isinstance(msg, SystemMessage) for msg in history)
     input_messages = history if has_system else [SYSTEM_PROMPT, *history]
 
-    saw_quota_error = False
-
-    for model_name in _get_candidate_models():
-        try:
-            model = build_model(model_name)
-            if model is None:
-                return {"messages": [AIMessage(content=UNAVAILABLE_MSG)]}
-            response = model.invoke(input_messages)
-            return {"messages": [response]}
-        except Exception as exc:
-            err_text = str(exc)
-            if "429" in err_text or "RESOURCE_EXHAUSTED" in err_text:
-                saw_quota_error = True
-            print(f"[AGENT WARN] Falló {model_name}: {type(exc).__name__}: {exc}")
-
-    fallback_msg = QUOTA_MSG if saw_quota_error else BUSY_MSG
-    return {"messages": [AIMessage(content=fallback_msg)]}
+    try:
+        model = build_model(OLLAMA_MODEL)
+        response = model.invoke(input_messages)
+        return {"messages": [response]}
+    except Exception as exc:
+        print(f"[AGENT ERROR] Falló {OLLAMA_MODEL}: {type(exc).__name__}: {exc}")
+        return {"messages": [AIMessage(content=UNAVAILABLE_MSG)]}
 
 
 def should_continue(state: AgentState):

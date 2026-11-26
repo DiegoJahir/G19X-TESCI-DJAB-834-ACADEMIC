@@ -1,6 +1,7 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Float
 from datetime import datetime, timezone
+from sqlalchemy import Boolean, Column, DateTime, Float, Integer, String
 from database import Base
+
 
 class User(Base):
     __tablename__ = "users"
@@ -13,6 +14,7 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
+
 class Invoice(Base):
     __tablename__ = "invoices"
 
@@ -20,5 +22,6 @@ class Invoice(Base):
     folio = Column(String, unique=True, index=True, nullable=False)
     client = Column(String, nullable=False)
     amount = Column(Float, nullable=False)
-    status = Column(String, default="Pendiente")  # Pendiente, Conciliado
+    paid_amount = Column(Float, default=0.0, nullable=False)
+    status = Column(String, default="Pendiente")  # Pendiente, Parcial, Conciliado
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))

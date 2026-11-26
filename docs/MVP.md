@@ -2,60 +2,75 @@
 
 ## 1. Alcance del MVP
 
-El Minimum Viable Product (MVP) demuestra el flujo de punta a punta (*end-to-end*) de la arquitectura agéntica financiera. Permite simular el cruce de información bancaria real contra PostgreSQL, desplegando los resultados en el panel frontal de React.
+El Minimum Viable Product (MVP) conecta un frontend en React y Vite con una API en FastAPI y una base de datos PostgreSQL para gestionar autenticación JWT, consulta de facturas, conciliación de estados de cuenta (CSV, Excel y PDF) con soporte de pagos parciales, y consultas mediante un agente en LangGraph respaldado por una herramienta sobre PostgreSQL.
 
 ---
 
 ## 2. Pila Tecnológica Real (Tech Stack)
 
-- **Backend y Orquestación:** Python 3.10+, FastAPI, Uvicorn, SQLAlchemy, Pandas, LangChain, LangGraph.
-- **Base de Datos y Contenedores:** PostgreSQL 15, Docker, Docker Compose.
-- **Frontend y Interfaz:** React.js, Vite, Lucide Icons.
-- **Seguridad:** Autenticación basada en JSON Web Tokens (JWT) y cifrado de contraseñas con Passlib (Bcrypt).
+ - **Backend y Orquestación:** Python 3.10+, FastAPI, Uvicorn, SQLAlchemy, Pandas, `openpyxl`, `pypdf`, LangChain, LangGraph, `langchain-ollama` (`ChatOllama`).
+ - **Base de Datos y Contenedores:** PostgreSQL 15, Docker, Docker Compose.
+ - **Frontend:** React.js, Vite, Lucide Icons.
+ - **Seguridad:** JWT (`PyJWT`) y hash de contraseñas con Passlib (`bcrypt`).
 
 ---
 
 ## 3. Arquitectura y Componentes del Sistema
 
-El sistema opera bajo un esquema de agentes coordinados y servicios integrados:
+El flujo principal conecta la interfaz web con FastAPI, PostgreSQL y el grafo de LangGraph:
 
 ```text```
 [ Usuario / Frontend (React + Vite) ]
-                  │
-                  ▼
+  │
+  ▼ (JWT Bearer Token)
 ┌────────────────────────────────────────────────────────┐
-│         FastAPI Backend & Orquestador Central          │
+│               FastAPI Backend (main.py)                │
 └────────────┬───────────────────────────────┬───────────┘
              │                               │
              ▼                               ▼
 ┌──────────────────────────┐    ┌──────────────────────────┐
-│  Motor de Conciliación   │    │    Consola Agéntica      │
-│  (Pandas / CSV & Excel)  │    │  (LangGraph / Fallback)  │
+│  Motor de Conciliación   │    │    Agente LangGraph      │
+│  CSV / Excel / PDF       │    │  ChatOllama + ToolNode   │
+│  (Pandas / pypdf)        │    │  (consultar_facturas_pg) │
 └────────────┬─────────────┘    └────────────┬─────────────┘
              │                               │
              └───────────────┬───────────────┘
                              │
                              ▼
             ┌─────────────────────────────────┐
-            │ PostgreSQL (Usuarios e Invoices)│
+            │ PostgreSQL (users e invoices)   │
             └─────────────────────────────────┘
 
-### 3.1. Backend (FastAPI)
+### 3.1. Frontend (React + Vite)
 
-* **Endpoints de Autenticación:** `/api/register` y `/api/login` para la gestión segura de accesos corporativos.
-* **Endpoints Protegidos de Administración:** `/api/users` (GET, DELETE) restringidos exclusivamente a usuarios con rol `admin`.
-* **Motor de Conciliación Bancaria (`/api/reconcile`):** Procesa de forma automatizada archivos de estado de cuenta en formato CSV o Excel mediante Pandas, cruzando los montos contra las facturas registradas en PostgreSQL.
-* **Orquestador Agéntico (`/api/chat`):** Conectado al grafo de estados en LangGraph, con un mecanismo de respaldo (fallback) inteligente hacia la base de datos en caso de no disponer de una clave de LLM externa.
+ - **Header y Autenticación:** Inicio de sesión contra `/api/login` y gestión del token JWT.
+ - **Tablero Financiero (`DataViewer.jsx`):** Consulta `/api/invoices` para mostrar facturas, montos abonados, saldos pendientes y totales conciliados o en riesgo desde PostgreSQL.
+ - **Consola Agéntica (`AgentChat.jsx`):** Envío de consultas a `/api/chat` y carga de archivos de estado de cuenta a `/api/reconcile`.
 
-### 3.2. Frontend (React + Vite)
+### 3.2. Backend (FastAPI)
 
-* **Header de Autenticación:** Panel superior interactivo para el inicio de sesión y gestión de tokens JWT con almacenamiento local seguro.
-* **Consola Agéntica (`AgentChat.jsx`):** Interfaz conversacional y zona de arrastre para la subida de estados de cuenta.
-* **Tablero Financiero (`DataViewer.jsx`):** Visor dinámico que consulta en tiempo real los totales conciliados, montos en riesgo y el estado de las facturas directamente desde la base de datos.
+ - **Autenticación y Usuarios:** `/api/register`, `/api/login`, `/api/users` (GET, DELETE con rol `admin`).
+ - **Facturas (`/api/invoices`):** Lectura de facturas y cálculo dinámico de `conciliated_amount` y `risk_amount` desde PostgreSQL.
+ - **Conciliación (`/api/reconcile`):** Procesamiento de CSV, Excel y PDF, actualización de `status` (`Pendiente`, `Parcial`, `Conciliado`), `paid_amount` y reporte de abonos no emparejados.
+ - **Chat Agéntico (`/api/chat`):** Invocación de `app_agent` con `thread_id` por usuario y retorno del mensaje de no disponibilidad si el modelo no está configurado o falla.
+
+### 3.3 Agente y Herramientas (`backend/agents/`)
+
+ - **`workflow.py`:** Grafo de LangGraph con `AgentState` (`add_messages`), nodo `agent` (`ChatOllama`), nodo `tools` (`ToolNode`) y `MemorySaver`.
+ - **`tools.py`:** Herramienta `consultar_facturas_postgres` para consultar facturas por folio, estado o listado completo en PostgreSQL.
 
 ---
 
 ## 4. Guía de Ejecución Rápida
-1. Levantar servicios de base de datos con Docker: `docker compose up -d`
-2. Iniciar el servidor backend en FastAPI: `uvicorn main:app --reload`
-3. Iniciar el cliente frontend en React: `npm run dev`
+1. Copiar `.env.example` a `.env` y configurar las variables locales.
+2. Levantar PostgreSQL: `docker compose up -d`
+3. Iniciar el backend FastAPI: `uvicorn main:app --reload`
+4. Iniciar el frontend React: `npm run dev`
+
+---
+
+## 5. Trabajo Futuro
+
+ - Incorporación de **Redis** para caché o sesiones distribuidas.
+ - Integración de **Azure AI Search** para indexación documental.
+ - Expansión hacia un esquema multi-agente (como un equipo de tres agentes especializados) y reportes descargables.

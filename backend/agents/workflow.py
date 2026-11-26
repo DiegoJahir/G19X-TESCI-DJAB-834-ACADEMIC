@@ -18,8 +18,8 @@ tools = [consultar_facturas_postgres]
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:3b").strip()
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").strip()
 UNAVAILABLE_MSG = (
-    f"El asistente local no está disponible: verifica que Ollama esté activo "
-    f"en {OLLAMA_BASE_URL} y que el modelo '{OLLAMA_MODEL}' esté descargado."
+    "El asistente no está disponible: falta configurar la llave del modelo "
+    f"o verificar el servicio local en {OLLAMA_BASE_URL}."
 )
 
 SYSTEM_PROMPT = SystemMessage(
@@ -33,12 +33,13 @@ SYSTEM_PROMPT = SystemMessage(
     )
 )
 
-
 class AgentState(TypedDict):
     messages: Annotated[list, add_messages]
 
 
 def build_model(model_name: str):
+    if not model_name:
+        raise ValueError("Modelo no configurado")
     llm = ChatOllama(
         model=model_name,
         base_url=OLLAMA_BASE_URL,
@@ -69,7 +70,6 @@ def should_continue(state: AgentState):
     if hasattr(last_message, "tool_calls") and last_message.tool_calls:
         return "tools"
     return END
-
 
 workflow = StateGraph(AgentState)
 workflow.add_node("agent", call_model)

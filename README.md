@@ -2,14 +2,14 @@ Proyecto de Desarrollo de una Arquitectura Agentic para Finanzas Corporativas
 Sistema agéntico empresarial desarrollado para PluriOne S.A. de C.V. enfocado en la automatización de procesos financieros mediante inteligencia artificial, orquestación de agentes, conciliación bancaria y análisis de riesgo en tiempo real.
 
    .Pila Tecnológica:
-    Backend & Orquestación: Python 3.10+, FastAPI, Uvicorn, SQLAlchemy, Pandas, LangChain, LangGraph.
-    Base de Datos & Contenedores: PostgreSQL 15, Docker, Docker Compose.
-    Frontend: React.js, Vite, Lucide Icons.
+    Backend y Orquestación:** Python 3.10+, FastAPI, Uvicorn, SQLAlchemy, Pandas, `openpyxl`, `pypdf`, LangChain, LangGraph, Ollama (`ChatOllama`).
+    Base de Datos y Contenedores:** PostgreSQL 15, Docker, Docker Compose.
+    Frontend:** React.js, Vite, Lucide Icons.
 
    .Cómo levantarlo en una máquina limpia
-    (Prerrequisitos)
-    Tener instalado Docker Desktop (y en ejecución).
-    Tener instalado Python 3.10+ y Node.js 18+.
+    Docker Desktop instalado y en ejecución.
+    Python 3.10+ y Node.js 18+.
+    Ollama instalado si vas a usar el modelo local (`OLLAMA_MODEL`, por defecto `qwen2.5:3b`) y haber descargado el modelo (`ollama pull qwen2.5:3b`).
 
 
 
@@ -18,17 +18,18 @@ Sistema agéntico empresarial desarrollado para PluriOne S.A. de C.V. enfocado e
 (1) Clonar el repositorio y configurar variables de entorno
 
    .Ejecuta en tu terminal:git clone https://github.com/DiegoJahir/G19X-TESCI-DJAB-834-ACADEMIC.gitcd G19X-TESCI-DJAB-834-ACADEMIC
+   .env.example .env
 
    .Crea un archivo .env en la raíz del proyecto basado en .env.example con los siguientes valores:
     POSTGRES_USER=postgres
-    POSTGRES_PASSWORD=postgrespassword
+    POSTGRES_PASSWORD=<tu_password_bd>
     POSTGRES_DB=bank_db
-    DATABASE_URL=postgresql+psycopg://postgres:postgrespassword@localhost:5432/bank_db
-    SECRET_KEY=clave_secreta_jwt_plurione
+    DATABASE_URL=postgresql+psycopg://postgres:<tu_password_bd>@localhost:5432/bank_db
+    SECRET_KEY=<tu_clave_secreta_jwt>
 
 (2) Levantar la Base de Datos con Docker
 
-   .Desde la raíz del proyecto, inicia PostgreSQL y PgAdmin:docker compose up -d(La base de datos bank_db se inicializará automáticamente con las tablas y datos de prueba definidos en schema.sql).
+   .Desde la raíz del proyecto, inicia PostgreSQL y PgAdmin: docker compose up -d (La base de datos bank_db se inicializará automáticamente con las tablas y datos de prueba definidos en schema.sql).
 
 (3) Levantar el Backend (FastAPI)
 
@@ -59,24 +60,28 @@ Sistema agéntico empresarial desarrollado para PluriOne S.A. de C.V. enfocado e
 
 Guía de Prueba (Validación)
 
-(1) Conciliación Bancaria: En la interfaz web (http://localhost:5173), arrastra o selecciona el archivo **Estado De Cuenta.csv** (o **Estado De Cuenta.xlsx**) incluido en la raíz del repositorio para validar el cruce automático contra las facturas precargadas (FAC-1021, FAC-1022, FAC-1023).
+(1) Inicio de sesión: Inicia sesión desde la interfaz web en http://localhost:5173 (o registra un usuario en /api/register / usa la cuenta configurada en .env).
 
-(2) Consola Agéntica: Escribe una instrucción en el chat inferior.
+(2) Conciliación bancaria: En la interfaz web, sube el archivo de ejemplo estado_cuenta_ejemplo.csv (ubicado en la raíz del repositorio) o un archivo .xlsx / .pdf con movimientos para validar el cruce contra las facturas en PostgreSQL (FAC-1021, FAC-1022, FAC-1023), incluyendo pagos completos, parciales y abonos sin identificar.
 
-(3) Endpoints REST: Accede a http://127.0.0.1:8000/docs para probar /api/register, /api/login y las rutas protegidas por rol de administrador (/api/users).
+(3) Consola agéntica: Envía una consulta en el chat (por ejemplo, preguntar por una factura por folio o por facturas pendientes/en riesgo) para que el agente consulte PostgreSQL mediante su herramienta.
+
+(4) Endpoints REST: Revisa http://127.0.0.1:8000/docs para probar /api/register, /api/login, /api/invoices, /api/reconcile (con token Bearer) y /api/chat.
 
 
 
 
 
 Endpoints Principales de la API
-    GET /: Verifica el estado activo de la API y conexión a PostgreSQL.
-    POST /api/register: Registro de nuevos usuarios (asigna rol analyst por defecto en el servidors).
-    POST /api/login: Autenticación y generación de token JWT.
-    GET /api/users: Listado de usuarios (Protegido: requiere token con rol admin).
-    DELETE /api/users/{user_id}: Eliminación de usuarios (Protegido: requiere token con rol admin).
-    POST /api/reconcile: Procesamiento de estados de cuenta (.csv, .xlsx, .xls) mediante Pandas.
-    POST /api/chat: Conexión directa con el grafo de estados del agente en LangGraph.
+
+    GET /: Verifica el estado de la API y la conexión a PostgreSQL.
+    POST /api/register: Registro de nuevos usuarios (asigna rol analyst en el servidor).
+    POST /api/login: Autenticación y emisión de token JWT.
+    GET /api/users: Listado de usuarios (protegido, requiere rol admin).
+    DELETE /api/users/{user_id}: Eliminación de usuarios (protegido, requiere rol admin).
+    GET /api/invoices: Consulta de facturas y resumen calculado desde PostgreSQL.
+    POST /api/reconcile: Conciliación de estados de cuenta (.csv, .xlsx, .xls, .pdf) con token JWT.
+    POST /api/chat: Consulta al agente en LangGraph con token JWT.
 
 
 
@@ -84,40 +89,40 @@ Endpoints Principales de la API
 
 Estructura del Proyecto
 
-   Agentic
-   ├── .github/
-   │   └── workflows/
-   │       └── deploy.yml              # Pipeline de integración y despliegue continuo (CI/CD)
-   ├── backend/
-   │   ├── agents/
-   │       └── workflow.py             # Orquestador agéntico con LangGraph y herramientas
-   │   ├── database.py                 # Conexión y sesión de base de datos SQLAlchemy (PostgreSQL)
-   │   ├── main.py                     # API principal en FastAPI (Endpoints de Auth, Chat y Conciliación)
-   │   ├── models.py                   # Modelos ORM de la base de datos (User, Invoice)
-   │   ├── schemas.py                  # Esquemas Pydantic para validación de datos y tokens
-   │   ├── security.py                 # Lógica de encriptación de contraseñas y validación de JWT
-   │   └── requirements.txt            # Dependencias de Python del backend
-   ├── docs/
-   │   ├── MVP.md                      # Definición de Arquitectura y alcance del MVP
-   │   └── PRD.md                      # Product Requirements Document (Requerimientos funcionales)
-   ├── frontend/
-   │   ├── public/                     # Recursos estáticos (Favicon, iconos SVG)
-   │   ├── src/
-   │       ├── assets/                 # Imágenes y recursos visuales (hero.png, etc.)
-   │       ├── components/             # Componentes modulares de la interfaz:
-   │       │   ├── AgentChat.jsx       # Consola agéntica interactiva y subida de archivos
-   │       │   ├── DataViewer.jsx      # Tablero dinámico de facturas, montos y riesgos
-   │       │   ├── Header.jsx          # Barra superior de navegación y perfil
-   │       │   └── Sidebar.jsx         # Menú lateral de opciones
-   │       ├── App.jsx                 # Componente raíz del sistema frontend
-   │       ├── App.css                 # Estilos corporativos oscuros / FinTech
-   │       ├── index.css               # Estilos globales de la aplicación
-   │       └── main.jsx                # Punto de entrada de la aplicación React
-   │   ├── package.json                # Dependencias de Node.js / React
-   │   └── vite.config.js              # Configuración del empaquetador Vite
-   ├── .env.example                    # Plantilla de variables de entorno seguras
-   ├── .gitignore                      # Exclusiones de Git (aislamiento de venv y .env)
-   ├── docker-compose.yml              # Orquestación de servicios Docker (PostgreSQL y PgAdmin)
-   ├── estado_cuenta_ejemplo.csv       # Archivo CSV de prueba para validación de conciliación
-   ├── README.md                       # Documentación general y guía de instalación
-   └── schema.sql                      # Script DDL inicial de PostgreSQL
+Agentic/
+├── .github/
+│   └── workflows/
+│       └── deploy.yml
+├── backend/
+│   ├── agents/
+│   │   ├── tools.py
+│   │   └── workflow.py
+│   ├── database.py
+│   ├── main.py
+│   ├── models.py
+│   ├── schemas.py
+│   ├── security.py
+│   └── requirements.txt
+├── docs/
+│   ├── MVP.md
+│   └── PRD.md
+├── frontend/
+│   ├── public/
+│   ├── src/
+│   │   ├── components/
+│   │   │   ├── AgentChat.jsx
+│   │   │   ├── DataViewer.jsx
+│   │   │   ├── Header.jsx
+│   │   │   └── Sidebar.jsx
+│   │   ├── App.jsx
+│   │   ├── App.css
+│   │   ├── index.css
+│   │   └── main.jsx
+│   ├── package.json
+│   └── vite.config.js
+├── .env.example
+├── .gitignore
+├── docker-compose.yml
+├── estado_cuenta_ejemplo.csv
+├── README.md
+└── schema.sql

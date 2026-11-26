@@ -15,12 +15,13 @@ CREATE TABLE users (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- 2. Tabla de Facturas (Alineada con backend/models.py usando folio, client, amount, status)
+-- 2. Tabla de Facturas (Alineada con backend/models.py)
 CREATE TABLE invoices (
     id SERIAL PRIMARY KEY,
     folio VARCHAR(100) UNIQUE NOT NULL,
     client VARCHAR(255) NOT NULL,
     amount DOUBLE PRECISION NOT NULL,
+    paid_amount DOUBLE PRECISION NOT NULL DEFAULT 0.0,
     status VARCHAR(50) DEFAULT 'Pendiente',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -33,22 +34,21 @@ CREATE TABLE audit_logs (
     timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- Datos de prueba iniciales para validar la base de datos al levantar Docker
--- Contraseña por defecto para admin@plurione.com es: PluriOne2026*
-INSERT INTO users (full_name, email, hashed_password, role, is_active) 
+-- Usuario administrador inicial de ejemplo (reemplazar o configurar vía variables de entorno)
+INSERT INTO users (full_name, email, hashed_password, role, is_active)
 VALUES (
-    'Administrador PluriOne', 
-    'admin@plurione.com', 
-    '$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW', 
-    'admin', 
+    'Administrador PluriOne',
+    'admin@plurione.com',
+    '$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW',
+    'admin',
     TRUE
 )
 ON CONFLICT (email) DO NOTHING;
 
--- Inserción de facturas de prueba iniciales para la conciliación
-INSERT INTO invoices (folio, client, amount, status) 
-VALUES 
-    ('FAC-1021', 'Tech Solutions Ltd', 45000.0, 'Pendiente'),
-    ('FAC-1022', 'Innovación Digital SA', 12500.0, 'Pendiente'),
-    ('FAC-1023', 'Consultoría Global', 98000.0, 'Pendiente')
+-- Facturas iniciales de ejemplo para conciliación
+INSERT INTO invoices (folio, client, amount, paid_amount, status)
+VALUES
+    ('FAC-1021', 'Tech Solutions Ltd', 45000.0, 0.0, 'Pendiente'),
+    ('FAC-1022', 'Innovación Digital SA', 12500.0, 0.0, 'Pendiente'),
+    ('FAC-1023', 'Consultoría Global', 98000.0, 0.0, 'Pendiente')
 ON CONFLICT (folio) DO NOTHING;

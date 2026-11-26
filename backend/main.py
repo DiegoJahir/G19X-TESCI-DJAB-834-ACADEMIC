@@ -1,3 +1,4 @@
+import os
 from langchain_core.messages import HumanMessage
 from agents.workflow import app_agent, UNAVAILABLE_MSG
 from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File
@@ -58,7 +59,7 @@ def crear_usuario_admin_por_defecto(db: Session):
         )
         db.add(default_admin)
         db.commit()
-        print(">>> Usuario administrador de prueba creado exitosamente (admin@plurione.com / PluriOne2026*)")
+        print(">>> Usuario administrador inicial creado desde variables de entorno.")
 
 # Ejecutamos la creación del usuario por defecto usando una sesión temporal de BD
 db_initializer = SessionLocal()
@@ -159,51 +160,67 @@ def get_invoices_and_summary(
 ):
     """Obtiene la lista de facturas y los montos calculados desde la base de datos."""
     invoices = db.query(models.Invoice).all()
-    
+
     # Si la tabla está vacía, insertamos las facturas iniciales por defecto
     if not invoices:
         default_invoices = [
-            models.Invoice(folio="FAC-1021", client="Tech Solutions Ltd", amount=45000.0, status="Pendiente"),
-            models.Invoice(folio="FAC-1022", client="Innovación Digital SA", amount=12500.0, status="Pendiente"),
-            models.Invoice(folio="FAC-1023", client="Consultoría Global", amount=98000.0, status="Pendiente"),
+            models.Invoice(folio="FAC-1021", client="Tech Solutions Ltd", amount=45000.0, paid_amount=0.0, status="Pendiente"),
+            models.Invoice(folio="FAC-1022", client="Innovación Digital SA", amount=12500.0, paid_amount=0.0, status="Pendiente"),
+            models.Invoice(folio="FAC-1023", client="Consultoría Global", amount=98000.0, paid_amount=0.0, status="Pendiente"),
         ]
         db.add_all(default_invoices)
         db.commit()
         invoices = db.query(models.Invoice).all()
 
-    conciliated_total = sum(float(inv.amount) for inv in invoices if inv.status == "Conciliado")
-    pending_risk_total = sum(float(inv.amount) for inv in invoices if inv.status != "Conciliado")
+    conciliated_total = 0.0
+    pending_risk_total = 0.0
+    results = []
 
-    results = [{
-        "folio": inv.folio,
-        "client": inv.client,
-        "amount": inv.amount,
-        "status": inv.status
-    } for inv in invoices]
+    for inv in invoices:
+        inv_amount = float(inv.amount or 0.0)
+        paid_val = float(getattr(inv, "paid_amount", 0.0) or 0.0)
+
+        if inv.status == "Conciliado":
+            conciliated_total += inv_amount
+            pending_balance = 0.0
+        else:
+            # Un pago parcial nunca cuenta como conciliado completo; suma su saldo restante al riesgo
+            effective_paid = min(inv_amount, max(0.0, paid_val)) if inv.status == "Parcial" else 0.0
+            pending_balance = max(0.0, inv_amount - effective_paid)
+            pending_risk_total += pending_balance
+
+        results.append({
+            "folio": inv.folio,
+            "client": inv.client,
+            "amount": inv_amount,
+            "paid_amount": round(paid_val, 2),
+            "pending_balance": round(pending_balance, 2),
+            "status": inv.status,
+        })
 
     return {
         "summary": {
-            "conciliated_amount": conciliated_total,
-            "risk_amount": pending_risk_total
+            "conciliated_amount": round(conciliated_total, 2),
+            "risk_amount": round(pending_risk_total, 2),
         },
-        "invoices": results
+        "invoices": results,
     }
 
 # --- ENDPOINT DE CONCILIACIÓN BANCARIA (PROTEGIDO) ---
 
 @app.post("/api/reconcile")
 async def reconcile_statement(
-    file: UploadFile = File(...), 
+    file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
     invoices = db.query(models.Invoice).all()
-    
+
     if not invoices:
         default_invoices = [
-            models.Invoice(folio="FAC-1021", client="Tech Solutions Ltd", amount=45000.0, status="Pendiente"),
-            models.Invoice(folio="FAC-1022", client="Innovación Digital SA", amount=12500.0, status="Pendiente"),
-            models.Invoice(folio="FAC-1023", client="Consultoría Global", amount=98000.0, status="Pendiente"),
+            models.Invoice(folio="FAC-1021", client="Tech Solutions Ltd", amount=45000.0, paid_amount=0.0, status="Pendiente"),
+            models.Invoice(folio="FAC-1022", client="Innovación Digital SA", amount=12500.0, paid_amount=0.0, status="Pendiente"),
+            models.Invoice(folio="FAC-1023", client="Consultoría Global", amount=98000.0, paid_amount=0.0, status="Pendiente"),
         ]
         db.add_all(default_invoices)
         db.commit()
@@ -277,16 +294,17 @@ async def reconcile_statement(
                         "detail": detalle_texto
                     })
 
-conciliated_total = 0.0
+    conciliated_total = 0.0
     pending_risk_total = 0.0
     results = []
     matched_indices = set()
 
     for inv in invoices:
-        inv_amount = float(inv.amount)
+        inv_amount = float(inv.amount or 0.0)
+        prev_paid = float(getattr(inv, "paid_amount", 0.0) or 0.0)
         folio_lower = str(inv.folio).strip().lower()
 
-        # 1. Buscar coincidencia exacta (pago completo)
+        # 1. Buscar coincidencia exacta / pago completo
         exact_idx = None
         for idx, mov in enumerate(movimientos):
             if idx in matched_indices:
@@ -302,11 +320,12 @@ conciliated_total = 0.0
         if exact_idx is not None:
             matched_indices.add(exact_idx)
             inv.status = "Conciliado"
+            inv.paid_amount = inv_amount
             conciliated_total += inv_amount
             saldo_pendiente = 0.0
         else:
             # 2. Buscar abonos parciales asociados a este folio o marcados como parciales
-            abono_parcial_acumulado = 0.0
+            abono_parcial_nuevo = 0.0
             for idx, mov in enumerate(movimientos):
                 if idx in matched_indices:
                     continue
@@ -316,22 +335,30 @@ conciliated_total = 0.0
 
                 if es_parcial_menor:
                     matched_indices.add(idx)
-                    abono_parcial_acumulado += mov["amount"]
+                    abono_parcial_nuevo += mov["amount"]
 
-            if abono_parcial_acumulado > 0:
+            total_abonado = prev_paid + abono_parcial_nuevo
+            if total_abonado >= inv_amount - 1.0 and inv_amount > 0:
+                inv.status = "Conciliado"
+                inv.paid_amount = inv_amount
+                conciliated_total += inv_amount
+                saldo_pendiente = 0.0
+            elif total_abonado > 0:
                 inv.status = "Parcial"
-                # Nunca se cuenta como conciliado completo
-                saldo_pendiente = max(0.0, inv_amount - abono_parcial_acumulado)
+                inv.paid_amount = round(total_abonado, 2)
+                saldo_pendiente = max(0.0, inv_amount - inv.paid_amount)
                 pending_risk_total += saldo_pendiente
             else:
                 inv.status = "Pendiente"
+                inv.paid_amount = 0.0
                 saldo_pendiente = inv_amount
                 pending_risk_total += saldo_pendiente
 
         results.append({
             "folio": inv.folio,
             "client": inv.client,
-            "amount": inv.amount,
+            "amount": inv_amount,
+            "paid_amount": round(float(inv.paid_amount or 0.0), 2),
             "pending_balance": round(saldo_pendiente, 2),
             "status": inv.status,
         })
@@ -350,8 +377,8 @@ conciliated_total = 0.0
 
     return {
         "summary": {
-            "conciliated_amount": conciliated_total,
-            "risk_amount": pending_risk_total,
+            "conciliated_amount": round(conciliated_total, 2),
+            "risk_amount": round(pending_risk_total, 2),
             "unmatched_abonos": unmatched_abonos,
             "unmatched_details": unmatched_details
         },

@@ -5,13 +5,12 @@ export default function AgentChat({ onReconcileSuccess }) {
   const [messages, setMessages] = useState([
     {
       sender: 'bot',
-      text: 'Hola, soy el Orquestador Financiero. Inicia sesión en la parte superior e indícame una instrucción o sube un estado de cuenta en CSV o Excel.'
+      text: 'Hola, soy el Orquestador Financiero. Inicia sesión en la parte superior e indícame una instrucción o sube un estado de cuenta en CSV, Excel o PDF.'
     }
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  // Manejador de subida de archivos hacia FastAPI con Token JWT obligatorio
   const handleFileUpload = async (e) => {
     const file = e.target.files?.[0];
     e.target.value = '';
@@ -19,7 +18,10 @@ export default function AgentChat({ onReconcileSuccess }) {
 
     const token = localStorage.getItem('token');
     if (!token) {
-      alert("Por favor inicia sesión en la parte superior antes de conciliar archivos.");
+      setMessages(prev => [
+        ...prev,
+        { sender: 'bot', text: 'Inicia sesión en la parte superior antes de subir un estado de cuenta.' }
+      ]);
       return;
     }
 
@@ -30,33 +32,38 @@ export default function AgentChat({ onReconcileSuccess }) {
     ]);
 
     const formData = new FormData();
-    formData.append("file", file);
+    formData.append('file', file);
 
     try {
-      const response = await fetch("http://127.0.0.1:8000/api/reconcile", {
-        method: "POST",
+      const response = await fetch('http://127.0.0.1:8000/api/reconcile', {
+        method: 'POST',
         headers: {
-          "Authorization": `Bearer ${token}`
+          Authorization: `Bearer ${token}`
         },
         body: formData,
       });
 
       if (response.status === 401) {
-        alert("Sesión expirada o no autorizada. Por favor vuelve a iniciar sesión.");
+        setMessages(prev => {
+          const updated = [...prev];
+          updated.pop();
+          return [...updated, { sender: 'bot', text: 'Sesión expirada o no autorizada. Vuelve a iniciar sesión.' }];
+        });
         return;
       }
 
       if (!response.ok) {
-        let errorMsg = 'Error al procesar el archivo. Revisa tus permisos o formato (CSV, XLSX o XLS).';
+        let errorMsg = 'Error al procesar el archivo. Revisa el formato (CSV, XLSX, XLS o PDF).';
         try {
           const errData = await response.json();
           if (errData?.detail) errorMsg = errData.detail;
         } catch (_) {}
 
-        setMessages(prev => [
-          ...prev,
-          { sender: 'bot', text: errorMsg }
-        ]);
+        setMessages(prev => {
+          const updated = [...prev];
+          updated.pop();
+          return [...updated, { sender: 'bot', text: errorMsg }];
+        });
         return;
       }
 
@@ -66,26 +73,41 @@ export default function AgentChat({ onReconcileSuccess }) {
         onReconcileSuccess(data.summary, data.invoices);
       }
 
-      setMessages(prev => [
-        ...prev,
-        { sender: 'bot', text: '¡Conciliación completada de forma segura! El tablero se ha actualizado.' }
-      ]);
+      const unmatchedCount = Array.isArray(data?.summary?.unmatched_abonos)
+        ? data.summary.unmatched_abonos.length
+        : 0;
+
+      const summaryNote = unmatchedCount > 0
+        ? ` Se detectaron ${unmatchedCount} movimiento(s) sin conciliar.`
+        : '';
+
+      setMessages(prev => {
+        const updated = [...prev];
+        updated.pop();
+        return [
+          ...updated,
+          { sender: 'bot', text: `Conciliación completada. El tablero se ha actualizado.${summaryNote}` }
+        ];
+      });
     } catch (error) {
-      console.error("Error conectando con la API:", error);
-      setMessages(prev => [
-        ...prev,
-        { sender: 'bot', text: 'Error de conexión con el servidor FastAPI.' }
-      ]);
+      console.error('Error conectando con la API:', error);
+      setMessages(prev => {
+        const updated = [...prev];
+        updated.pop();
+        return [...updated, { sender: 'bot', text: 'Error de conexión con el servidor FastAPI.' }];
+      });
     }
   };
 
-  // Manejador del chat conectado al endpoint protegido /api/chat
   const handleSend = async () => {
     if (!input.trim() || isLoading) return;
 
     const token = localStorage.getItem('token');
     if (!token) {
-      alert("Por favor inicia sesión en la parte superior para usar el chat agéntico.");
+      setMessages(prev => [
+        ...prev,
+        { sender: 'bot', text: 'Inicia sesión en la parte superior para usar el chat agéntico.' }
+      ]);
       return;
     }
 
@@ -95,26 +117,26 @@ export default function AgentChat({ onReconcileSuccess }) {
     setMessages(prev => [
       ...prev,
       { sender: 'user', text: userMessage },
-      { sender: 'bot', text: 'Analizando tu petición con los agentes de seguridad y riesgo...' }
+      { sender: 'bot', text: 'Consultando al agente...' }
     ]);
     setIsLoading(true);
 
     try {
-      const response = await fetch("http://127.0.0.1:8000/api/chat", {
-        method: "POST",
+      const response = await fetch('http://127.0.0.1:8000/api/chat', {
+        method: 'POST',
         headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
         },
         body: JSON.stringify({ message: userMessage }),
       });
 
       if (response.status === 401) {
-        throw new Error("No autorizado. Inicia sesión nuevamente.");
+        throw new Error('No autorizado. Inicia sesión nuevamente.');
       }
 
       if (!response.ok) {
-        throw new Error("Error en la respuesta del servidor");
+        throw new Error('Error en la respuesta del servidor');
       }
 
       const data = await response.json();
@@ -125,11 +147,11 @@ export default function AgentChat({ onReconcileSuccess }) {
         return [...newMessages, { sender: 'bot', text: data.response }];
       });
     } catch (error) {
-      console.error("Error conectando con el agente:", error);
+      console.error('Error conectando con el agente:', error);
       setMessages(prev => {
         const newMessages = [...prev];
         newMessages.pop();
-        return [...newMessages, { sender: 'bot', text: `Error: ${error.message || 'No se pudo conectar con el agente.'}` }];
+        return [...newMessages, { sender: 'bot', text: error.message || 'No se pudo conectar con el agente.' }];
       });
     } finally {
       setIsLoading(false);
@@ -148,7 +170,7 @@ export default function AgentChat({ onReconcileSuccess }) {
           borderRadius: '10px',
           fontWeight: '600'
         }}>
-          Modo Demo / Asistente Conectado
+          Asistente Conectado
         </span>
       </div>
 
@@ -157,7 +179,7 @@ export default function AgentChat({ onReconcileSuccess }) {
         id="file-input"
         style={{ display: 'none' }}
         onChange={handleFileUpload}
-        accept=".csv,.xlsx,.xls"
+        accept=".csv,.xlsx,.xls,.pdf"
       />
       <label
         htmlFor="file-input"
@@ -173,9 +195,9 @@ export default function AgentChat({ onReconcileSuccess }) {
       >
         <Upload size={32} color="#4a90e2" />
         <p style={{ marginTop: '8px', fontSize: '14px', fontWeight: 'bold', color: '#1e293b' }}>
-          Arrastra tu Estado de Cuenta (CSV / Excel)
+          Arrastra tu Estado de Cuenta (CSV / Excel / PDF)
         </p>
-        <span style={{ fontSize: '12px', color: '#666' }}>Soporta XLSX, CSV y XLS</span>
+        <span style={{ fontSize: '12px', color: '#666' }}>Soporta CSV, XLSX, XLS y PDF</span>
       </label>
 
       <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px', paddingRight: '5px' }}>
@@ -198,7 +220,7 @@ export default function AgentChat({ onReconcileSuccess }) {
       <div style={{ display: 'flex', gap: '8px' }}>
         <input
           type="text"
-          placeholder={isLoading ? "El agente está respondiendo..." : "Escribe una instrucción..."}
+          placeholder={isLoading ? 'El agente está respondiendo...' : 'Escribe una instrucción...'}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleSend()}
@@ -206,9 +228,18 @@ export default function AgentChat({ onReconcileSuccess }) {
           style={{ flex: 1, padding: '10px', borderRadius: '6px', border: '1px solid #ccc' }}
         />
         <button
+          type="button"
           onClick={handleSend}
           disabled={isLoading}
-          style={{ backgroundColor: '#007bff', color: '#fff', border: 'none', padding: '10px 15px', borderRadius: '6px', cursor: isLoading ? 'not-allowed' : 'pointer', opacity: isLoading ? 0.7 : 1 }}
+          style={{
+            backgroundColor: '#007bff',
+            color: '#fff',
+            border: 'none',
+            padding: '10px 15px',
+            borderRadius: '6px',
+            cursor: isLoading ? 'not-allowed' : 'pointer',
+            opacity: isLoading ? 0.7 : 1
+          }}
         >
           <Send size={18} />
         </button>

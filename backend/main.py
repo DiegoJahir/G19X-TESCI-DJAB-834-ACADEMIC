@@ -324,35 +324,39 @@ async def reconcile_statement(
             conciliated_total += inv_amount
             saldo_pendiente = 0.0
         else:
-            # 2. Buscar abonos parciales asociados a este folio o marcados como parciales
-            abono_parcial_nuevo = 0.0
-            for idx, mov in enumerate(movimientos):
-                if idx in matched_indices:
-                    continue
-                detail_lower = mov["detail"].lower()
-                menciona_este_folio = folio_lower in detail_lower
-                es_parcial_menor = ("parcial" in detail_lower or menciona_este_folio) and mov["amount"] < (inv_amount - 1.0)
+                # 2. Buscar abonos parciales asociados a este folio o marcados como parciales
+                abono_parcial_nuevo = 0.0
+                for idx, mov in enumerate(movimientos):
+                    if idx in matched_indices:
+                        continue
+                    detail_lower = mov["detail"].lower()
+                    menciona_este_folio = folio_lower in detail_lower
+                    tiene_otro_folio = ("fac-" in detail_lower) and (folio_lower not in detail_lower)
+                    es_parcial_menor = (
+                        (menciona_este_folio or ("parcial" in detail_lower and not tiene_otro_folio))
+                        and mov["amount"] < (inv_amount - 1.0)
+                    )
 
-                if es_parcial_menor:
-                    matched_indices.add(idx)
-                    abono_parcial_nuevo += mov["amount"]
+                    if es_parcial_menor:
+                        matched_indices.add(idx)
+                        abono_parcial_nuevo += mov["amount"]
 
-            total_abonado = prev_paid + abono_parcial_nuevo
-            if total_abonado >= inv_amount - 1.0 and inv_amount > 0:
-                inv.status = "Conciliado"
-                inv.paid_amount = inv_amount
-                conciliated_total += inv_amount
-                saldo_pendiente = 0.0
-            elif total_abonado > 0:
-                inv.status = "Parcial"
-                inv.paid_amount = round(total_abonado, 2)
-                saldo_pendiente = max(0.0, inv_amount - inv.paid_amount)
-                pending_risk_total += saldo_pendiente
-            else:
-                inv.status = "Pendiente"
-                inv.paid_amount = 0.0
-                saldo_pendiente = inv_amount
-                pending_risk_total += saldo_pendiente
+                total_abonado = prev_paid + abono_parcial_nuevo
+                if total_abonado >= inv_amount - 1.0 and inv_amount > 0:
+                    inv.status = "Conciliado"
+                    inv.paid_amount = inv_amount
+                    conciliated_total += inv_amount
+                    saldo_pendiente = 0.0
+                elif total_abonado > 0:
+                    inv.status = "Parcial"
+                    inv.paid_amount = round(total_abonado, 2)
+                    saldo_pendiente = max(0.0, inv_amount - inv.paid_amount)
+                    pending_risk_total += saldo_pendiente
+                else:
+                    inv.status = "Pendiente"
+                    inv.paid_amount = 0.0
+                    saldo_pendiente = inv_amount
+                    pending_risk_total += saldo_pendiente
 
         results.append({
             "folio": inv.folio,

@@ -36,7 +36,9 @@ def consultar_facturas_postgres(folio: str = "", estado: str = "") -> str:
         lineas = [
             (
                 f"- Folio: {f.folio} | Cliente: {f.client} | "
-                f"Monto: ${float(f.amount or 0):,.2f} MXN | Estado: {f.status}"
+                f"Monto: ${float(f.amount or 0):,.2f} MXN | "
+                f"Pagado: ${float(f.paid_amount or 0):,.2f} MXN | "
+                f"Estado: {f.status}"
             )
             for f in facturas
         ]

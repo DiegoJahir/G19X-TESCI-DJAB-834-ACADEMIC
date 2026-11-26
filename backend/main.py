@@ -239,6 +239,7 @@ async def reconcile_statement(
                     status_code=400,
                     detail=f"Error al leer Excel. Asegúrate de tener instaladas las dependencias (ejecuta: pip install openpyxl xlrd). Detalle: {str(excel_err)}"
                 )
+
         elif filename.endswith('.pdf'):
             try:
                 import re
@@ -246,11 +247,49 @@ async def reconcile_statement(
 
                 reader = PdfReader(io.BytesIO(contents))
                 text = "\n".join((page.extract_text() or "") for page in reader.pages)
-                matches = re.findall(r'\b\d{1,3}(?:,\d{3})*(?:\.\d{2})?\b', text)
-                amounts = [float(m.replace(',', '')) for m in matches if float(m.replace(',', '')) > 0]
-                if not amounts:
-                    raise HTTPException(status_code=400, detail="No se detectaron montos legibles en el PDF.")
-                df = pd.DataFrame({'abono': amounts})
+
+                rows_pdf = []
+                ultimo_folio = ""
+
+                for raw_line in text.splitlines():
+                    line = " ".join(raw_line.split()).strip()
+                    if not line:
+                        continue
+
+                    folio_match = re.search(r'\bFAC-\d+\b', line, flags=re.IGNORECASE)
+                    if folio_match:
+                        ultimo_folio = folio_match.group(0).upper()
+
+                    # Limpia folios y fechas (dd/mm/yyyy o yyyy-mm-dd) para no tomarlos como montos
+                    line_limpia = re.sub(r'\bFAC-\d+\b', ' ', line, flags=re.IGNORECASE)
+                    line_limpia = re.sub(r'\b\d{1,2}/\d{1,2}/\d{2,4}\b', ' ', line_limpia)
+                    line_limpia = re.sub(r'\b\d{4}-\d{1,2}-\d{1,2}\b', ' ', line_limpia)
+
+                    # 1) Montos con decimales (ej. 45,000.00 o $12500.50)
+                    dec_matches = re.findall(r'(?:\$\s*)?(\d{1,3}(?:,\d{3})*\.\d{1,2}|\d+\.\d{1,2})', line_limpia)
+
+                    # 2) Si no hay decimales, enteros >= 100 que no sean años (1900-2100)
+                    candidatos = dec_matches
+                    if not candidatos:
+                        int_matches = re.findall(r'(?:\$\s*)?(\d{1,3}(?:,\d{3})*|\d+)', line_limpia)
+                        for tok in int_matches:
+                            num = int(tok.replace(',', ''))
+                            if num >= 100 and not (1900 <= num <= 2100):
+                                candidatos.append(tok)
+
+                    if candidatos:
+                        monto_val = float(candidatos[-1].replace('$', '').replace(',', '').strip())
+                        if monto_val > 0:
+                            detalle = f"{ultimo_folio} - {line}".strip(" -") if ultimo_folio else line
+                            rows_pdf.append({
+                                "abono": monto_val,
+                                "descripcion": detalle
+                            })
+
+                if not rows_pdf:
+                    raise HTTPException(status_code=400, detail="No se detectaron movimientos legibles en el PDF.")
+
+                df = pd.DataFrame(rows_pdf)
             except HTTPException:
                 raise
             except Exception as pdf_err:
@@ -258,6 +297,7 @@ async def reconcile_statement(
                     status_code=400,
                     detail=f"No se pudo procesar el PDF (instala 'pypdf' o sube un archivo CSV/Excel). Detalle: {str(pdf_err)}"
                 )
+
         else:
             raise HTTPException(status_code=400, detail="Formato no soportado. Sube un archivo CSV, Excel (.xlsx, .xls) o PDF.")
     except HTTPException as he:

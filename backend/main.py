@@ -27,7 +27,12 @@ app = FastAPI(title="PluriOne FinTech API")
 # Permitir peticiones desde el frontend en React (http://localhost:5173)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -38,18 +43,18 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/login")
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 def crear_usuario_admin_por_defecto(db: Session):
-    """Verifica si existe el administrador por defecto y lo crea si no está presente."""
-    admin_email = "admin@plurione.com"
+    admin_email = os.getenv("ADMIN_EMAIL", "").strip()
+    admin_password = os.getenv("ADMIN_PASSWORD", "").strip()
+    if not admin_email or not admin_password:
+        return
     existing_admin = db.query(models.User).filter(models.User.email == admin_email).first()
-    
     if not existing_admin:
-        hashed_password = pwd_context.hash("PluriOne2026*")
         default_admin = models.User(
-            full_name="Administrador PluriOne",
+            full_name=os.getenv("ADMIN_NAME", "Administrador PluriOne"),
             email=admin_email,
-            hashed_password=hashed_password,
+            hashed_password=security.hash_password(admin_password),
             role="admin",
-            is_active=True
+            is_active=True,
         )
         db.add(default_admin)
         db.commit()
@@ -272,7 +277,7 @@ async def reconcile_statement(
                         "detail": detalle_texto
                     })
 
-    conciliated_total = 0.0
+conciliated_total = 0.0
     pending_risk_total = 0.0
     results = []
     matched_indices = set()
@@ -281,7 +286,8 @@ async def reconcile_statement(
         inv_amount = float(inv.amount)
         folio_lower = str(inv.folio).strip().lower()
 
-        matched_idx = None
+        # 1. Buscar coincidencia exacta (pago completo)
+        exact_idx = None
         for idx, mov in enumerate(movimientos):
             if idx in matched_indices:
                 continue
@@ -289,23 +295,45 @@ async def reconcile_statement(
             es_parcial = "parcial" in detail_lower
             tiene_otro_folio = ("fac-" in detail_lower) and (folio_lower not in detail_lower)
 
-            if not es_parcial and not tiene_otro_folio and abs(inv_amount - mov["amount"]) < 1.0:
-                matched_idx = idx
+            if not es_parcial and not tiene_otro_folio and mov["amount"] >= inv_amount - 1.0:
+                exact_idx = idx
                 break
 
-        if matched_idx is not None:
-            matched_indices.add(matched_idx)
+        if exact_idx is not None:
+            matched_indices.add(exact_idx)
             inv.status = "Conciliado"
             conciliated_total += inv_amount
+            saldo_pendiente = 0.0
         else:
-            inv.status = "Pendiente"
-            pending_risk_total += inv_amount
+            # 2. Buscar abonos parciales asociados a este folio o marcados como parciales
+            abono_parcial_acumulado = 0.0
+            for idx, mov in enumerate(movimientos):
+                if idx in matched_indices:
+                    continue
+                detail_lower = mov["detail"].lower()
+                menciona_este_folio = folio_lower in detail_lower
+                es_parcial_menor = ("parcial" in detail_lower or menciona_este_folio) and mov["amount"] < (inv_amount - 1.0)
+
+                if es_parcial_menor:
+                    matched_indices.add(idx)
+                    abono_parcial_acumulado += mov["amount"]
+
+            if abono_parcial_acumulado > 0:
+                inv.status = "Parcial"
+                # Nunca se cuenta como conciliado completo
+                saldo_pendiente = max(0.0, inv_amount - abono_parcial_acumulado)
+                pending_risk_total += saldo_pendiente
+            else:
+                inv.status = "Pendiente"
+                saldo_pendiente = inv_amount
+                pending_risk_total += saldo_pendiente
 
         results.append({
             "folio": inv.folio,
             "client": inv.client,
             "amount": inv.amount,
-            "status": inv.status
+            "pending_balance": round(saldo_pendiente, 2),
+            "status": inv.status,
         })
 
     unmatched_abonos = []

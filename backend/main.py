@@ -7,7 +7,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from typing import List
 import pandas as pd
-import io
 
 # Importa passlib para generar el hash de la contraseña si fuera necesario
 from passlib.context import CryptContext
@@ -463,3 +462,17 @@ def chat_with_agent(
         return {"response": reply if reply else UNAVAILABLE_MSG}
     except Exception:
         return {"response": UNAVAILABLE_MSG}
+
+# --- ENDPOINT PARA MOSTRAR USUARIOS REGISTRADOS ---
+
+@app.get("/api/users/public")
+def list_public_users(db: Session = Depends(get_db)):
+    users = db.query(models.User).all()
+    return [
+        {
+            "id": u.id,
+            "name": u.full_name,
+            "email": u.email,
+        }
+        for u in users
+    ]

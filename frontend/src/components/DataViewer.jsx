@@ -62,6 +62,63 @@ export default function DataViewer({ summary, invoices, authToken }) {
     fetchDashboardData();
   }, [authToken]);
 
+  const escapeCsvValue = (value) => {
+    const str = String(value ?? '');
+    return `"${str.replace(/"/g, '""')}"`;
+  };
+
+  const handleExportReport = () => {
+    if (!Array.isArray(currentInvoices) || currentInvoices.length === 0) {
+      alert('No hay facturas registradas para exportar.');
+      return;
+    }
+
+    const headers = ['Folio', 'Cliente', 'Monto', 'Monto Abonado', 'Estado'];
+    const rows = currentInvoices.map((row) => [
+      escapeCsvValue(row.folio),
+      escapeCsvValue(row.client || row.cliente || ''),
+      escapeCsvValue(Number(row.amount || 0).toFixed(2)),
+      escapeCsvValue(Number(row.paid_amount ?? 0).toFixed(2)),
+      escapeCsvValue(row.status || 'Pendiente'),
+    ]);
+
+    const summaryRows = [
+      [],
+      [escapeCsvValue('Resumen'), '', '', '', ''],
+      [
+        escapeCsvValue('Cuentas Conciliadas (MXN)'),
+        escapeCsvValue(Number(currentSummary.conciliated_amount || 0).toFixed(2)),
+        '',
+        '',
+        '',
+      ],
+      [
+        escapeCsvValue('Alerta de Riesgo / Faltante (MXN)'),
+        escapeCsvValue(Number(currentSummary.risk_amount || 0).toFixed(2)),
+        '',
+        '',
+        '',
+      ],
+    ];
+
+    const csvContent =
+      '\uFEFF' +
+      [headers.map(escapeCsvValue).join(','), ...rows.map((r) => r.join(',')), ...summaryRows.map((r) => r.join(','))].join(
+        '\r\n'
+      );
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const dateStamp = new Date().toISOString().slice(0, 10);
+    link.href = url;
+    link.setAttribute('download', `reporte_conciliacion_${dateStamp}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   const getBadgeStyle = (statusText) => {
     if (statusText === 'Conciliado') {
       return { backgroundColor: '#dcfce7', color: '#166534' };
@@ -97,6 +154,8 @@ export default function DataViewer({ summary, invoices, authToken }) {
           </button>
           <button
             type="button"
+            onClick={handleExportReport}
+            title="Descargar reporte CSV del tablero actual"
             style={{
               padding: '8px 12px',
               background: '#28a745',

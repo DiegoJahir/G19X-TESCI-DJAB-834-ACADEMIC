@@ -23,7 +23,6 @@ import models  # noqa: E402
 import security  # noqa: E402
 from agents import tools as agent_tools  # noqa: E402
 
-
 @pytest.fixture()
 def test_env():
     engine = create_engine(
@@ -186,3 +185,54 @@ def test_herramienta_consultar_facturas_postgres(test_env):
 
     resultado_inexistente = agent_tools.consultar_facturas_postgres.invoke({"folio": "FAC-9999"})
     assert "No se encontraron facturas en PostgreSQL" in resultado_inexistente
+
+async def _get_invoices(headers: dict) -> httpx.Response:
+    transport = httpx.ASGITransport(app=main.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        return await client.get("/api/invoices", headers=headers)
+
+def test_reconciliacion_requiere_token():
+    response = asyncio.run(
+        _post_reconcile(headers={}, rows=[("REF-AUTH", "Pago FAC-1021", 0.0, 45000.0)])
+    )
+    assert response.status_code == 401
+
+
+def test_abonos_parciales_acumulados_completan_factura(test_env):
+    first = asyncio.run(
+        _post_reconcile(test_env["headers"], [("REF-P1", "Abono parcial FAC-1022", 0.0, 5000.0)])
+    )
+    assert first.status_code == 200
+    inv_after_first = {i["folio"]: i for i in first.json()["invoices"]}["FAC-1022"]
+    assert inv_after_first["status"] == "Parcial"
+    assert inv_after_first["paid_amount"] == pytest.approx(5000.0)
+    assert inv_after_first["pending_balance"] == pytest.approx(7500.0)
+
+    second = asyncio.run(
+        _post_reconcile(test_env["headers"], [("REF-P2", "Abono parcial FAC-1022", 0.0, 7500.0)])
+    )
+    assert second.status_code == 200
+    inv_after_second = {i["folio"]: i for i in second.json()["invoices"]}["FAC-1022"]
+    assert inv_after_second["status"] == "Conciliado"
+    assert inv_after_second["paid_amount"] == pytest.approx(12500.0)
+    assert inv_after_second["pending_balance"] == pytest.approx(0.0)
+
+
+def test_tablero_invoices_refleja_cambios_en_base_de_datos(test_env):
+    asyncio.run(
+        _post_reconcile(test_env["headers"], [("REF-DB", "Pago FAC-1021", 0.0, 45000.0)])
+    )
+    res = asyncio.run(_get_invoices(test_env["headers"]))
+    assert res.status_code == 200
+    data = res.json()
+    assert data["summary"]["conciliated_amount"] == pytest.approx(45000.0)
+    assert data["summary"]["risk_amount"] == pytest.approx(12500.0 + 98000.0)
+
+
+def test_agente_no_disponible_devuelve_mensaje_claro(monkeypatch):
+    from agents import workflow
+
+    monkeypatch.setattr(workflow, "OLLAMA_MODEL", "")
+    salida = workflow.call_model({"messages": []})
+    assert salida["messages"]
+    assert "El asistente no está disponible" in salida["messages"][-1].content

@@ -1,4 +1,5 @@
 import os
+import re
 from pathlib import Path
 from typing import Annotated, TypedDict
 from dotenv import load_dotenv
@@ -25,15 +26,50 @@ UNAVAILABLE_MSG = (
 SYSTEM_PROMPT = SystemMessage(
     content=(
         "Eres el Orquestador Financiero de PluriOne FinTech. "
-        "Siempre que el usuario pregunte por facturas, folios (como FAC-1023), "
-        "clientes, montos, pagos, conciliaciones, alertas o cuentas pendientes, "
-        "DEBES llamar a la herramienta `consultar_facturas_postgres` antes de responder. "
-        "Si no estás seguro del folio o estado, llama `consultar_facturas_postgres` "
-        "con argumentos vacíos para revisar las facturas reales en PostgreSQL. "
-        "Nunca inventes folios, montos ni estados; usa únicamente los datos devueltos "
-        "por la herramienta."
+        "Tienes la herramienta `consultar_facturas_postgres` conectada a PostgreSQL. "
+        "REGLA: Si el usuario pregunta por facturas, folios, clientes, montos, pagos, "
+        "conciliación, alertas, discrepancias, riesgo, ingresos, flujo financiero, "
+        "depósitos no identificados o sincronización con PostgreSQL, llama SIEMPRE "
+        "primero a `consultar_facturas_postgres` (con folio='' y estado=''). "
+        "Si se menciona un folio (como FAC-1021, FAC-1022 o FAC-1023), reporta su "
+        "estado real aunque esté Conciliado y aclara si hay o no facturas pendientes "
+        "o en riesgo. Responde directo con los folios, montos, pagos, saldos "
+        "pendientes y estados reales de PostgreSQL. Si preguntan por depósitos no "
+        "identificados o movimientos externos, indica que la herramienta consulta "
+        "facturas en PostgreSQL y muestra las facturas registradas. No uses "
+        "asteriscos (**) ni comillas invertidas (`)."
     )
 )
+
+
+def _clean_text(text: str) -> str:
+    cleaned = re.sub(r"\*\*(.*?)\*\*", r"\1", text)
+    cleaned = cleaned.replace("**", "").replace("`", "")
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    return cleaned.strip()
+
+FINANCIAL_KEYWORDS = (
+    "factura", "folio", "cliente", "monto", "pago", "pagado", "saldo",
+    "concili", "riesgo", "alerta", "discrep", "ingreso", "pandas",
+    "flujo", "reporte", "resumen", "depósito", "deposito", "sincron",
+    "postgres", "base de datos", "pendiente", "parcial", "corte", "cuenta",
+)
+
+def _needs_postgres_lookup(text: str) -> bool:
+    q = (text or "").lower()
+    return any(word in q for word in FINANCIAL_KEYWORDS)
+
+def _has_tool_in_current_turn(history: list) -> bool:
+    for msg in reversed(history):
+        msg_type = getattr(msg, "type", "")
+        if msg_type == "tool":
+            return True
+        if msg_type == "human":
+            return False
+    return False
+
+def _has_tool_message(history: list) -> bool:
+    return any(getattr(msg, "type", "") == "tool" for msg in history)
 
 class AgentState(TypedDict):
     messages: Annotated[list, add_messages]
@@ -46,23 +82,50 @@ def build_model(model_name: str):
         model=model_name,
         base_url=OLLAMA_BASE_URL,
         temperature=0,
+        num_predict=400,
     )
     return llm.bind_tools(tools)
 
 
 def call_model(state: AgentState):
     history = state.get("messages", [])
-    has_system = any(isinstance(msg, SystemMessage) for msg in history)
-    input_messages = history if has_system else [SYSTEM_PROMPT, *history]
+    non_system_messages = [msg for msg in history if not isinstance(msg, SystemMessage)]
+    input_messages = [SYSTEM_PROMPT, *non_system_messages]
+
+    last_user_text = ""
+    for msg in reversed(non_system_messages):
+        if getattr(msg, "type", "") == "human":
+            last_user_text = str(msg.content or "")
+            break
 
     try:
         model = build_model(OLLAMA_MODEL)
         response = model.invoke(input_messages)
+
+        has_calls = bool(getattr(response, "tool_calls", None))
+        if (
+            not has_calls
+            and not _has_tool_in_current_turn(non_system_messages)
+            and _needs_postgres_lookup(last_user_text)
+        ):
+            forced_call = AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "consultar_facturas_postgres",
+                        "args": {"folio": "", "estado": ""},
+                        "id": "call_auto_postgres_01",
+                    }
+                ],
+            )
+            return {"messages": [forced_call]}
+
+        if isinstance(response, AIMessage) and isinstance(response.content, str) and response.content:
+            response.content = _clean_text(response.content)
         return {"messages": [response]}
     except Exception as exc:
         print(f"[AGENT ERROR] Falló {OLLAMA_MODEL}: {type(exc).__name__}: {exc}")
         return {"messages": [AIMessage(content=UNAVAILABLE_MSG)]}
-
 
 def should_continue(state: AgentState):
     messages = state.get("messages", [])
@@ -72,6 +135,7 @@ def should_continue(state: AgentState):
     if hasattr(last_message, "tool_calls") and last_message.tool_calls:
         return "tools"
     return END
+
 
 workflow = StateGraph(AgentState)
 workflow.add_node("agent", call_model)

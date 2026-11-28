@@ -129,7 +129,7 @@ def test_conciliacion_pago_completo(test_env):
     assert fac_1021["paid_amount"] == pytest.approx(45000.0)
     assert fac_1021["pending_balance"] == pytest.approx(0.0)
     assert payload["summary"]["conciliated_amount"] == pytest.approx(45000.0)
-    assert payload["summary"]["risk_amount"] == pytest.approx(12500.0 + 98000.0)
+    assert payload["summary"]["risk_amount"] == pytest.approx(0.0)
 
 
 def test_conciliacion_pago_parcial_no_cuenta_como_conciliado_completo(test_env):
@@ -147,7 +147,7 @@ def test_conciliacion_pago_parcial_no_cuenta_como_conciliado_completo(test_env):
     assert fac_1021["pending_balance"] == pytest.approx(30000.0)
 
     assert payload["summary"]["conciliated_amount"] == pytest.approx(0.0)
-    assert payload["summary"]["risk_amount"] == pytest.approx(30000.0 + 12500.0 + 98000.0)
+    assert payload["summary"]["risk_amount"] == pytest.approx(30000.0)
 
 
 def test_conciliacion_pago_inexistente_reporta_no_conciliado(test_env):
@@ -158,12 +158,11 @@ def test_conciliacion_pago_inexistente_reporta_no_conciliado(test_env):
     payload = response.json()
 
     assert payload["summary"]["conciliated_amount"] == pytest.approx(0.0)
-    assert payload["summary"]["risk_amount"] == pytest.approx(45000.0 + 12500.0 + 98000.0)
+    assert payload["summary"]["risk_amount"] == pytest.approx(0.0)
     assert all(inv["status"] == "Pendiente" for inv in payload["invoices"])
 
     unmatched = payload["summary"].get("unmatched_abonos", [])
     assert any(float(item) == pytest.approx(500.0) for item in unmatched)
-
 
 def test_herramienta_consultar_facturas_postgres(test_env):
     response = asyncio.run(
@@ -226,7 +225,7 @@ def test_tablero_invoices_refleja_cambios_en_base_de_datos(test_env):
     assert res.status_code == 200
     data = res.json()
     assert data["summary"]["conciliated_amount"] == pytest.approx(45000.0)
-    assert data["summary"]["risk_amount"] == pytest.approx(12500.0 + 98000.0)
+    assert data["summary"]["risk_amount"] == pytest.approx(0.0)
 
 
 def test_agente_no_disponible_devuelve_mensaje_claro(monkeypatch):

@@ -1,15 +1,27 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Upload, Bot, Send } from 'lucide-react';
 
-export default function AgentChat({ onReconcileSuccess }) {
-  const [messages, setMessages] = useState([
-    {
-      sender: 'bot',
-      text: 'Hola, soy el Orquestador Financiero. Inicia sesión en la parte superior e indícame una instrucción o sube un estado de cuenta en CSV, Excel o PDF.'
-    }
-  ]);
+const INITIAL_MESSAGES = [
+  {
+    sender: 'bot',
+    text: 'Hola, soy el Orquestador Financiero. Inicia sesión en la parte superior e indícame una instrucción o sube un estado de cuenta en CSV, Excel o PDF.'
+  }
+];
+
+export default function AgentChat({ onReconcileSuccess, resetSignal = 0 }) {
+  const [messages, setMessages] = useState(INITIAL_MESSAGES);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const isFirstRender = useRef(true);
+
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    setMessages(INITIAL_MESSAGES);
+    setInput('');
+  }, [resetSignal]);
 
   const handleFileUpload = async (e) => {
     const file = e.target.files?.[0];
@@ -70,7 +82,7 @@ export default function AgentChat({ onReconcileSuccess }) {
       const data = await response.json();
 
       if (onReconcileSuccess) {
-        onReconcileSuccess(data.summary, data.invoices);
+        onReconcileSuccess(data.summary, data.invoices, file.name);
       }
 
       const unmatchedCount = Array.isArray(data?.summary?.unmatched_abonos)

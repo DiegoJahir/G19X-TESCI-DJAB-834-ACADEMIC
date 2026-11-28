@@ -1,0 +1,4 @@
+referencia,cliente,monto,fecha,descripcion
+DEP-9001,Transferencia Externa,18500.00,2026-11-16,Deposito sin folio asociado
+DEP-9002,Proveedor Desconocido,7200.00,2026-11-16,Abono externo no identificado
+DEP-9003,Caja Chica Pasarela,11300.00,2026-11-16,Movimiento pendiente de identificar

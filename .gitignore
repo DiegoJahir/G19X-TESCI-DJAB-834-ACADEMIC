@@ -4,8 +4,12 @@ Instrucciones.txt
 *.csv
 .env
 
-# Excepción para permitir que el CSV de ejemplo sí se guarde en Git
+# Excepciones para permitir los ejemplos de prueba en Git
 !estado_cuenta_ejemplo.csv
+!Estados De Cuentas/
+!Estados De Cuentas/Estado De Cuenta *.csv
+!Estados De Cuentas/Estado De Cuenta *.xlsx
+!Estados De Cuentas/Estado De Cuenta *.pdf
 
 # Entornos virtuales y dependencias
 venv/

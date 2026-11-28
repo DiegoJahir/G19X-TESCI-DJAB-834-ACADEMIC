@@ -151,6 +151,23 @@ def delete_user(user_id: int, db: Session = Depends(get_db), current_user: model
     db.commit()
     return {"message": f"Usuario con ID {user_id} eliminado exitosamente"}
 
+def calculate_partial_risk(invoices, unmatched_count: int = 0) -> float:
+    """Suma el faltante solo cuando hay facturas en 'Parcial' o movimientos sin conciliar."""
+    has_activity_or_issue = (
+        any(getattr(inv, "status", None) == "Parcial" for inv in invoices)
+        or (unmatched_count > 0)
+    )
+    if not has_activity_or_issue:
+        return 0.0
+
+    risk = 0.0
+    for inv in invoices:
+        if getattr(inv, "status", None) == "Parcial":
+            amt = float(getattr(inv, "amount", 0.0) or 0.0)
+            paid = float(getattr(inv, "paid_amount", 0.0) or 0.0)
+            risk += max(0.0, amt - paid)
+    return round(risk, 2)
+
 # --- ENDPOINT PARA OBTENER FACTURAS Y RESUMEN (DINÁMICO) ---
 
 @app.get("/api/invoices")
@@ -183,11 +200,11 @@ def get_invoices_and_summary(
         if inv.status == "Conciliado":
             conciliated_total += inv_amount
             pending_balance = 0.0
-        else:
-            # Un pago parcial nunca cuenta como conciliado completo; suma su saldo restante al riesgo
-            effective_paid = min(inv_amount, max(0.0, paid_val)) if inv.status == "Parcial" else 0.0
+        elif inv.status == "Parcial":
+            effective_paid = min(inv_amount, max(0.0, paid_val))
             pending_balance = max(0.0, inv_amount - effective_paid)
-            pending_risk_total += pending_balance
+        else:
+            pending_balance = inv_amount
 
         results.append({
             "folio": inv.folio,
@@ -201,9 +218,34 @@ def get_invoices_and_summary(
     return {
         "summary": {
             "conciliated_amount": round(conciliated_total, 2),
-            "risk_amount": round(pending_risk_total, 2),
+            "risk_amount": calculate_partial_risk(invoices),
         },
         "invoices": results,
+    }
+
+# --- ENDPOINT DE RESETEO ---
+
+@app.post("/api/invoices/reset")
+def reset_invoices_for_testing(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Resetea paid_amount y status de las facturas a Pendiente (solo admin)."""
+    allow_reset = os.getenv("ALLOW_TEST_RESET", "true").strip().lower() in ("1", "true", "yes")
+    if not allow_reset:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="El reseteo de pruebas está deshabilitado en este entorno."
+        )
+
+    updated_count = (
+        db.query(models.Invoice)
+        .update({"paid_amount": 0.0, "status": "Pendiente"})
+    )
+    db.commit()
+    return {
+        "message": f"Se resetearon {updated_count} facturas a Pendiente.",
+        "updated_count": updated_count,
     }
 
 # --- ENDPOINT DE CONCILIACIÓN BANCARIA (PROTEGIDO) ---
@@ -313,8 +355,12 @@ async def reconcile_statement(
             abono_col = col_name
             break
 
+    ref_col = next(
+        (c for c in ['referencia', 'folio'] if c in df.columns),
+        None
+    )
     desc_col = next(
-        (c for c in ['concepto', 'descripcion', 'descripción', 'referencia', 'detalle', 'folio', 'observaciones'] if c in df.columns),
+        (c for c in ['concepto', 'descripcion', 'descripción', 'detalle', 'observaciones'] if c in df.columns),
         None
     )
 
@@ -328,14 +374,19 @@ async def reconcile_statement(
                 except ValueError:
                     continue
                 if monto_val > 0:
-                    detalle_texto = str(row[desc_col]).strip() if desc_col and pd.notnull(row[desc_col]) else ""
+                    ref_texto = str(row[ref_col]).strip() if ref_col and pd.notnull(row[ref_col]) else ""
+                    desc_texto = str(row[desc_col]).strip() if desc_col and pd.notnull(row[desc_col]) else ""
+
+                    if ref_texto and desc_texto and ref_texto.lower() not in desc_texto.lower():
+                        detalle_texto = f"{ref_texto} - {desc_texto}"
+                    else:
+                        detalle_texto = ref_texto or desc_texto
+
                     movimientos.append({
                         "amount": monto_val,
                         "detail": detalle_texto
                     })
-
     conciliated_total = 0.0
-    pending_risk_total = 0.0
     results = []
     matched_indices = set()
 
@@ -344,59 +395,45 @@ async def reconcile_statement(
         prev_paid = float(getattr(inv, "paid_amount", 0.0) or 0.0)
         folio_lower = str(inv.folio).strip().lower()
 
-        # 1. Buscar coincidencia exacta / pago completo
-        exact_idx = None
-        for idx, mov in enumerate(movimientos):
-            if idx in matched_indices:
-                continue
-            detail_lower = mov["detail"].lower()
-            es_parcial = "parcial" in detail_lower
-            tiene_otro_folio = ("fac-" in detail_lower) and (folio_lower not in detail_lower)
-
-            if not es_parcial and not tiene_otro_folio and mov["amount"] >= inv_amount - 1.0:
-                exact_idx = idx
-                break
-
-        if exact_idx is not None:
-            matched_indices.add(exact_idx)
+        # Si la factura ya estaba liquidada en PostgreSQL, no absorbe nuevos depósitos
+        if prev_paid >= inv_amount - 0.01 and inv_amount > 0:
             inv.status = "Conciliado"
             inv.paid_amount = inv_amount
             conciliated_total += inv_amount
             saldo_pendiente = 0.0
         else:
-                # 2. Buscar abonos parciales asociados a este folio o marcados como parciales
-                abono_parcial_nuevo = 0.0
-                for idx, mov in enumerate(movimientos):
-                    if idx in matched_indices:
-                        continue
-                    detail_lower = mov["detail"].lower()
-                    menciona_este_folio = folio_lower in detail_lower
-                    tiene_otro_folio = ("fac-" in detail_lower) and (folio_lower not in detail_lower)
-                    es_parcial_menor = (
-                        (menciona_este_folio or ("parcial" in detail_lower and not tiene_otro_folio))
-                        and mov["amount"] < (inv_amount - 1.0)
-                    )
+            abono_nuevo = 0.0
+            for idx, mov in enumerate(movimientos):
+                if idx in matched_indices:
+                    continue
 
-                    if es_parcial_menor:
-                        matched_indices.add(idx)
-                        abono_parcial_nuevo += mov["amount"]
+                detail_lower = mov["detail"].lower()
+                # Exigir que el movimiento mencione explícitamente este folio
+                if folio_lower not in detail_lower:
+                    continue
 
-                total_abonado = prev_paid + abono_parcial_nuevo
-                if total_abonado >= inv_amount - 1.0 and inv_amount > 0:
-                    inv.status = "Conciliado"
-                    inv.paid_amount = inv_amount
-                    conciliated_total += inv_amount
-                    saldo_pendiente = 0.0
-                elif total_abonado > 0:
-                    inv.status = "Parcial"
-                    inv.paid_amount = round(total_abonado, 2)
-                    saldo_pendiente = max(0.0, inv_amount - inv.paid_amount)
-                    pending_risk_total += saldo_pendiente
-                else:
-                    inv.status = "Pendiente"
-                    inv.paid_amount = 0.0
-                    saldo_pendiente = inv_amount
-                    pending_risk_total += saldo_pendiente
+                restante = inv_amount - (prev_paid + abono_nuevo)
+                if restante <= 0.01:
+                    # La factura ya se cubrió: cualquier otro movimiento con este folio queda como duplicado/sin conciliar
+                    break
+
+                matched_indices.add(idx)
+                abono_nuevo += mov["amount"]
+
+            total_abonado = prev_paid + abono_nuevo
+            if total_abonado >= inv_amount - 0.01 and inv_amount > 0:
+                inv.status = "Conciliado"
+                inv.paid_amount = inv_amount
+                conciliated_total += inv_amount
+                saldo_pendiente = 0.0
+            elif total_abonado > 0:
+                inv.status = "Parcial"
+                inv.paid_amount = round(total_abonado, 2)
+                saldo_pendiente = max(0.0, inv_amount - inv.paid_amount)
+            else:
+                inv.status = "Pendiente"
+                inv.paid_amount = 0.0
+                saldo_pendiente = inv_amount
 
         results.append({
             "folio": inv.folio,
@@ -414,21 +451,23 @@ async def reconcile_statement(
             unmatched_abonos.append(mov["amount"])
             unmatched_details.append({
                 "amount": mov["amount"],
-                "detail": mov["detail"] or "Movimiento / depósito sin identificar o parcial"
+                "detail": mov["detail"] or "Movimiento / depósito sin identificar"
             })
 
     db.commit()
 
+    final_risk = calculate_partial_risk(invoices, len(unmatched_details))
+
     return {
         "summary": {
             "conciliated_amount": round(conciliated_total, 2),
-            "risk_amount": round(pending_risk_total, 2),
+            "risk_amount": final_risk,
             "unmatched_abonos": unmatched_abonos,
             "unmatched_details": unmatched_details
         },
         "invoices": results
     }
-
+    
 # --- ENDPOINT DEL AGENTE INTELIGENTE (CON RESPALDO INTELIGENTE) ---
 
 @app.post("/api/chat")

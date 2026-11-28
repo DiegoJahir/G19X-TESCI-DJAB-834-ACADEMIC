@@ -10,7 +10,9 @@ export default function App() {
   });
 
   const [invoices, setInvoices] = useState([]);
+  const [reconciliationHistory, setReconciliationHistory] = useState([]);
   const [authToken, setAuthToken] = useState(() => localStorage.getItem('token') || '');
+  const [resetSignal, setResetSignal] = useState(0);
 
   const fetchDashboardData = async (tokenToUse) => {
     const token = tokenToUse || localStorage.getItem('token');
@@ -51,9 +53,29 @@ export default function App() {
     fetchDashboardData(token);
   };
 
-  const handleReconciliationData = (newSummary, newInvoices) => {
+  const handleReconciliationData = (newSummary, newInvoices, fileName = '') => {
     if (newSummary) setSummary(newSummary);
     if (newInvoices) setInvoices(newInvoices);
+
+    if (newInvoices || newSummary) {
+      setReconciliationHistory((prev) => {
+        const index = prev.length + 1;
+        const entry = {
+          id: `${Date.now()}-${index}`,
+          fileName: fileName || `Estado de cuenta #${index}`,
+          uploadedAt: new Date().toLocaleTimeString(),
+          summary: newSummary || { conciliated_amount: 0, risk_amount: 0 },
+          invoices: Array.isArray(newInvoices) ? newInvoices : [],
+        };
+        return [...prev, entry];
+      });
+    }
+  };
+
+  const handleResetSuccess = async () => {
+    setReconciliationHistory([]);
+    await fetchDashboardData();
+    setResetSignal((prev) => prev + 1);
   };
 
   return (
@@ -62,8 +84,17 @@ export default function App() {
         <Header onLoginSuccess={handleLoginSuccess} />
 
         <div className="workspace">
-          <AgentChat onReconcileSuccess={handleReconciliationData} />
-          <DataViewer summary={summary} invoices={invoices} authToken={authToken} />
+          <AgentChat
+            onReconcileSuccess={handleReconciliationData}
+            resetSignal={resetSignal}
+          />
+          <DataViewer
+            summary={summary}
+            invoices={invoices}
+            reconciliationHistory={reconciliationHistory}
+            authToken={authToken}
+            onResetSuccess={handleResetSuccess}
+          />
         </div>
       </div>
     </div>

@@ -10,8 +10,8 @@
  - **Docker Desktop** instalado y en ejecución.
  - **Python 3.10+** y **Node.js 18+**.
  - **Ollama** instalado si vas a usar el modelo local (`OLLAMA_MODEL`, por defecto `qwen2.5:3b`) y haber descargado el modelo:
-   ```bash
-   ollama pull qwen2.5:3b
+  ```bash
+  ollama pull qwen2.5:3b
 
 **1 Clonar el repositorio y configurar variables de entorno**
 
@@ -59,13 +59,15 @@
 
 **1 Inicio de sesión**: Accede desde la interfaz web en http://localhost:5173 (o registra un usuario en /api/register / inicia sesión con tus credenciales configuradas).
 
-**2 Conciliación bancaria**: Sube el archivo de ejemplo estado_cuenta_ejemplo.csv (ubicado en la raíz del repositorio) o un archivo .xlsx / .xls / .pdf desde la consola para validar el cruce contra las facturas en PostgreSQL (FAC-1021, FAC-1022, FAC-1023), incluyendo pagos completos, abonos parciales y movimientos sin identificar.
+**2 Conciliación bancaria**: Sube cualquiera de los archivos de prueba en Estados De Cuentas/ (Estado De Cuenta 1 a 5 en .csv, .xlsx o .pdf) o estado_cuenta_ejemplo.csv desde la consola para validar el cruce contra las facturas en PostgreSQL (FAC-1021, FAC-1022, FAC-1023), incluyendo liquidaciones totales, pagos parciales, pagos fraccionados secuenciales, abonos duplicados y movimientos sin identificar.
 
 **3 Consola agéntica**: Envía consultas en el chat (por ejemplo, preguntar por un folio específico como FAC-1023, por facturas pendientes/en riesgo o por el resumen de cuentas conciliadas) para que el agente consulte PostgreSQL mediante su herramienta.
 
-**4 Endpoints REST**: Revisa http://127.0.0.1:8000/docs para probar /api/register, /api/login, /api/invoices, /api/reconcile (con token Bearer) y /api/chat.
+**4 Resetear pruebas y exportar reporte**: Usa Resetear pruebas en el tablero para devolver las facturas a su estado inicial, limpiar el historial de conciliaciones y reiniciar los mensajes de la Consola Agéntica IA; utiliza Exportar Reporte para descargar un CSV con el estado actual del tablero.
 
-**5 Pruebas automatizadas (pytest)**: Desde backend/ con el entorno virtual activo, ejecuta: pytest -v
+**5 Endpoints REST**: Revisa http://127.0.0.1:8000/docs para probar /api/register, /api/login, /api/invoices, /api/reconcile (con token Bearer) y /api/chat.
+
+**6 Pruebas automatizadas (pytest)**: Desde backend/ con el entorno virtual activo, ejecuta: pytest -v
 
 # Endpoints Principales de la API
 
@@ -101,6 +103,22 @@ Agentic/
 │   ├── MVP.md
 │   ├── PRD.md
 │   └── USO_IA.md
+├── Estados De Cuentas/
+│   ├── Estado De Cuenta 1.csv
+│   ├── Estado De Cuenta 1.pdf
+│   ├── Estado De Cuenta 1.xlsx
+│   ├── Estado De Cuenta 2.csv
+│   ├── Estado De Cuenta 2.pdf
+│   ├── Estado De Cuenta 2.xlsx
+│   ├── Estado De Cuenta 3.csv
+│   ├── Estado De Cuenta 3.pdf
+│   ├── Estado De Cuenta 3.xlsx
+│   ├── Estado De Cuenta 4.csv
+│   ├── Estado De Cuenta 4.pdf
+│   ├── Estado De Cuenta 4.xlsx
+│   ├── Estado De Cuenta 5.csv
+│   ├── Estado De Cuenta 5.pdf
+│   └── Estado De Cuenta 5.xlsx
 ├── frontend/
 │   ├── public/
 │   ├── src/
